@@ -46,3 +46,52 @@ struct ArousalComponent
 struct PlayerTagComponent
 {
 };
+
+enum class EnemyArchetype : std::uint8_t
+{
+    Melee
+};
+
+struct EnemyComponent
+{
+    EnemyArchetype archetype{EnemyArchetype::Melee};
+    float moveSpeed{140.0f};
+};
+
+struct ContactDamageComponent
+{
+    float damage{8.0f};
+    float hitCooldown{0.9f};
+    float cooldownLeft{0.0f};
+};
+
+struct AutoAttackComponent
+{
+    float damage{16.0f};
+    float range{260.0f};
+    float interval{0.55f};
+    float cooldownLeft{0.0f};
+};
+
+struct ExperienceComponent
+{
+    int level{1};
+    int currentXp{0};
+    int xpToNext{40};
+};
+
+enum class PickupType : std::uint8_t
+{
+    Xp
+};
+
+struct PickupComponent
+{
+    PickupType type{PickupType::Xp};
+    int value{0};
+};
+
+struct LifetimeComponent
+{
+    float remainingSeconds{0.0f};
+};
