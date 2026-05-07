@@ -41,10 +41,11 @@ private:
     };
 
     void createPlayerEntity();
-    void spawnEnemies();
     void spawnMeleeEnemy(float x, float y);
     void spawnRangedEnemy(float x, float y);
     void spawnCasterEnemy(float x, float y);
+    void updateWaveSystem();
+    bool tryFinishRun();
     void updatePlayerMovement(float deltaTime);
     void updateEnemyAI(float deltaTime);
     void applyContactDamage(float deltaTime);
@@ -76,13 +77,20 @@ private:
     void updateHudText();
     void renderEntities(sf::RenderWindow& window);
     void renderLevelUpOverlay(sf::RenderWindow& window);
+    void renderStopOverlay(sf::RenderWindow& window);
+
+    static constexpr std::size_t WaveCount = 3;
 
     bool m_hasUiFont{false};
     bool m_isDefeated{false};
     DefeatReason m_defeatReason{DefeatReason::None};
     bool m_isLevelUpSelection{false};
+    bool m_isStopped{false};
     int m_pendingLevelUps{0};
     float m_hitFeedbackTimer{0.0f};
+    float m_runDuration{180.0f};
+    float m_runTimeLeft{180.0f};
+    std::array<bool, WaveCount> m_wavesSpawned{};
     AssetManager m_assetManager;
     World m_world;
     EntityId m_playerEntity{InvalidEntity};
@@ -102,4 +110,6 @@ private:
     sf::Text m_levelUpTitleText;
     sf::Text m_levelUpChoicesText;
     sf::Text m_lastPerkText;
+    sf::Text m_stopTitleText;
+    sf::Text m_stopChoicesText;
 };

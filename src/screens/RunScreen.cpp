@@ -92,10 +92,28 @@ const std::array<sf::Vector2f, 8> EnemySpawnPoints = {
     sf::Vector2f{1000.0f, 320.0f},
 };
 
+struct WaveDefinition
+{
+    float startTime;
+    int meleeCount;
+    int rangedCount;
+    int casterCount;
+};
+
+constexpr std::array<WaveDefinition, 3> WaveTable = {{
+    {  0.0f, 4, 1, 0 },
+    { 60.0f, 2, 2, 1 },
+    {120.0f, 3, 2, 2 },
+}};
+
+constexpr float RunDurationSeconds = 180.0f;
+
 }
 
 RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont)
     : m_hasUiFont(hasUiFont)
+    , m_runDuration(RunDurationSeconds)
+    , m_runTimeLeft(RunDurationSeconds)
     , m_rng(std::random_device{}())
 {
     m_assetManager.loadTexture("player", "assets/textures/placeholders/player.png");
@@ -107,7 +125,6 @@ RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont)
     m_assetManager.loadTexture("xp_pickup", "assets/textures/placeholders/xp_pickup.png");
 
     createPlayerEntity();
-    spawnEnemies();
 
     if (m_hasUiFont)
     {
@@ -147,6 +164,16 @@ RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont)
         m_lastPerkText.setCharacterSize(18);
         m_lastPerkText.setFillColor(sf::Color(190, 230, 190));
         m_lastPerkText.setPosition(32.f, 188.f);
+
+        m_stopTitleText.setFont(uiFont);
+        m_stopTitleText.setCharacterSize(38);
+        m_stopTitleText.setFillColor(sf::Color(255, 240, 200));
+        m_stopTitleText.setPosition(380.f, 220.f);
+
+        m_stopChoicesText.setFont(uiFont);
+        m_stopChoicesText.setCharacterSize(26);
+        m_stopChoicesText.setFillColor(sf::Color(230, 230, 255));
+        m_stopChoicesText.setPosition(380.f, 290.f);
     }
 
     updateHudText();
@@ -159,17 +186,36 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
         return std::nullopt;
     }
 
-    if (m_isDefeated && event.key.code == sf::Keyboard::Enter)
+    if (m_isDefeated)
     {
-        return GameState::Base;
+        if (event.key.code == sf::Keyboard::Enter)
+        {
+            return GameState::Base;
+        }
+        return std::nullopt;
     }
 
-    if (!m_isDefeated && event.key.code == sf::Keyboard::Escape)
+    if (m_isStopped)
     {
-        return GameState::Base;
+        if (event.key.code == sf::Keyboard::Num2
+            || event.key.code == sf::Keyboard::Numpad2
+            || event.key.code == sf::Keyboard::Escape)
+        {
+            return GameState::Base;
+        }
+
+        if (event.key.code == sf::Keyboard::Num1
+            || event.key.code == sf::Keyboard::Numpad1)
+        {
+            // Continue is an MVP stub for stage 11. Intentionally a no-op:
+            // the run-finish condition still holds (timer at 0 or all waves
+            // cleared), so resuming would immediately re-trigger stop. The
+            // overlay stays open until the player picks Exit to Base.
+        }
+        return std::nullopt;
     }
 
-    if (m_isLevelUpSelection && !m_isDefeated)
+    if (m_isLevelUpSelection)
     {
         int choiceIndex = -1;
         if (event.key.code == sf::Keyboard::Num1 || event.key.code == sf::Keyboard::Numpad1)
@@ -204,6 +250,12 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
                 m_isLevelUpSelection = false;
             }
         }
+        return std::nullopt;
+    }
+
+    if (event.key.code == sf::Keyboard::Escape)
+    {
+        return GameState::Base;
     }
 
     return std::nullopt;
@@ -213,8 +265,13 @@ void RunScreen::update(float deltaTime)
 {
     m_hitFeedbackTimer = std::max(0.0f, m_hitFeedbackTimer - deltaTime);
 
-    if (!m_isDefeated && !m_isLevelUpSelection)
+    const bool simulationActive =
+        !m_isDefeated && !m_isLevelUpSelection && !m_isStopped;
+
+    if (simulationActive)
     {
+        m_runTimeLeft = std::max(0.0f, m_runTimeLeft - deltaTime);
+        updateWaveSystem();
         updatePlayerMovement(deltaTime);
         updateEnemyAI(deltaTime);
         applyContactDamage(deltaTime);
@@ -226,10 +283,6 @@ void RunScreen::update(float deltaTime)
         updatePickups(deltaTime);
         handleDeaths();
         handleLevelUpProgression();
-    }
-    else if (!m_isDefeated && m_isLevelUpSelection)
-    {
-        // Pause gameplay simulation while the player selects a perk.
     }
 
     m_world.flushDestroyed();
@@ -244,6 +297,7 @@ void RunScreen::update(float deltaTime)
             m_isDefeated = true;
             m_defeatReason = DefeatReason::Hp;
             m_isLevelUpSelection = false;
+            m_isStopped = false;
             m_pendingLevelUps = 0;
         }
         else if (arousal && arousal->current >= arousal->max)
@@ -251,7 +305,12 @@ void RunScreen::update(float deltaTime)
             m_isDefeated = true;
             m_defeatReason = DefeatReason::Arousal;
             m_isLevelUpSelection = false;
+            m_isStopped = false;
             m_pendingLevelUps = 0;
+        }
+        else if (!m_isStopped && !m_isLevelUpSelection)
+        {
+            tryFinishRun();
         }
     }
 
@@ -275,9 +334,14 @@ void RunScreen::render(sf::RenderWindow& window)
             window.draw(m_feedbackText);
         }
 
-        if (m_isLevelUpSelection)
+        if (m_isLevelUpSelection && !m_isStopped && !m_isDefeated)
         {
             renderLevelUpOverlay(window);
+        }
+
+        if (m_isStopped && !m_isDefeated)
+        {
+            renderStopOverlay(window);
         }
     }
 }
@@ -308,23 +372,88 @@ void RunScreen::createPlayerEntity()
     m_world.addComponent<ExperienceComponent>(m_playerEntity, ExperienceComponent{1, 0, computeXpToNext(1)});
 }
 
-void RunScreen::spawnEnemies()
+void RunScreen::updateWaveSystem()
 {
-    if (EnemySpawnPoints.size() < 8)
+    if (EnemySpawnPoints.empty())
     {
         return;
     }
 
-    spawnMeleeEnemy(EnemySpawnPoints[0].x, EnemySpawnPoints[0].y);
-    spawnMeleeEnemy(EnemySpawnPoints[1].x, EnemySpawnPoints[1].y);
-    spawnMeleeEnemy(EnemySpawnPoints[2].x, EnemySpawnPoints[2].y);
-    spawnMeleeEnemy(EnemySpawnPoints[3].x, EnemySpawnPoints[3].y);
+    const float elapsed = m_runDuration - m_runTimeLeft;
 
-    spawnRangedEnemy(EnemySpawnPoints[4].x, EnemySpawnPoints[4].y);
-    spawnRangedEnemy(EnemySpawnPoints[5].x, EnemySpawnPoints[5].y);
+    static_assert(WaveTable.size() == WaveCount,
+        "Wave table size must match RunScreen::WaveCount.");
 
-    spawnCasterEnemy(EnemySpawnPoints[6].x, EnemySpawnPoints[6].y);
-    spawnCasterEnemy(EnemySpawnPoints[7].x, EnemySpawnPoints[7].y);
+    for (std::size_t waveIdx = 0; waveIdx < WaveTable.size(); ++waveIdx)
+    {
+        if (m_wavesSpawned[waveIdx])
+        {
+            continue;
+        }
+
+        const WaveDefinition& wave = WaveTable[waveIdx];
+        if (elapsed < wave.startTime)
+        {
+            continue;
+        }
+
+        std::size_t spawnIdx = (waveIdx * 3u) % EnemySpawnPoints.size();
+        const auto nextPoint = [&]() -> sf::Vector2f
+        {
+            const sf::Vector2f point = EnemySpawnPoints[spawnIdx];
+            spawnIdx = (spawnIdx + 1u) % EnemySpawnPoints.size();
+            return point;
+        };
+
+        for (int i = 0; i < wave.meleeCount; ++i)
+        {
+            const sf::Vector2f p = nextPoint();
+            spawnMeleeEnemy(p.x, p.y);
+        }
+        for (int i = 0; i < wave.rangedCount; ++i)
+        {
+            const sf::Vector2f p = nextPoint();
+            spawnRangedEnemy(p.x, p.y);
+        }
+        for (int i = 0; i < wave.casterCount; ++i)
+        {
+            const sf::Vector2f p = nextPoint();
+            spawnCasterEnemy(p.x, p.y);
+        }
+
+        m_wavesSpawned[waveIdx] = true;
+    }
+}
+
+bool RunScreen::tryFinishRun()
+{
+    if (m_isDefeated || m_isStopped)
+    {
+        return m_isStopped;
+    }
+
+    const bool timeUp = m_runTimeLeft <= 0.0f;
+
+    bool allWavesSpawned = true;
+    for (const bool spawned : m_wavesSpawned)
+    {
+        if (!spawned)
+        {
+            allWavesSpawned = false;
+            break;
+        }
+    }
+
+    const bool clearedAll = allWavesSpawned && countAliveEnemies() == 0;
+
+    if (timeUp || clearedAll)
+    {
+        m_isStopped = true;
+        m_isLevelUpSelection = false;
+        return true;
+    }
+
+    return false;
 }
 
 void RunScreen::spawnMeleeEnemy(float x, float y)
@@ -1144,6 +1273,11 @@ void RunScreen::updateHudText()
         defeatMsg << "Defeat (" << reasonLabel << "). Press Enter to return to base";
         m_instruction.setString(defeatMsg.str());
     }
+    else if (m_isStopped)
+    {
+        stateText = "Stopped";
+        m_instruction.setString("Run finished. 1: Continue (stub) | 2: Exit to base");
+    }
     else if (m_isLevelUpSelection)
     {
         stateText = "Level Up";
@@ -1154,9 +1288,17 @@ void RunScreen::updateHudText()
         m_instruction.setString("Move: WASD/Arrows  |  Esc: return to base");
     }
 
+    const int totalSeconds = std::max(0, static_cast<int>(std::ceil(m_runTimeLeft)));
+    const int minutes = totalSeconds / 60;
+    const int seconds = totalSeconds % 60;
+
+    std::ostringstream timerStr;
+    timerStr << minutes << ':' << std::setw(2) << std::setfill('0') << seconds;
+
     std::ostringstream ss;
     ss << std::fixed << std::setprecision(2);
     ss << "State: " << stateText
+       << "   Run " << timerStr.str()
        << "   HP: " << static_cast<int>(health->currentHp) << "/" << static_cast<int>(health->maxHp)
        << "   Arousal: " << static_cast<int>(arousal->current) << "/" << static_cast<int>(arousal->max)
        << "   Lvl: " << experience->level
@@ -1220,4 +1362,19 @@ void RunScreen::renderLevelUpOverlay(sf::RenderWindow& window)
             << "3) " << m_levelChoices[2];
     m_levelUpChoicesText.setString(choices.str());
     window.draw(m_levelUpChoicesText);
+}
+
+void RunScreen::renderStopOverlay(sf::RenderWindow& window)
+{
+    sf::RectangleShape overlay(sf::Vector2f(WindowWidth, WindowHeight));
+    overlay.setFillColor(sf::Color(0, 0, 0, 190));
+    window.draw(overlay);
+
+    m_stopTitleText.setString("Run Stopped");
+    window.draw(m_stopTitleText);
+
+    m_stopChoicesText.setString(
+        "1) Continue (MVP stub)\n"
+        "2) Exit to Base");
+    window.draw(m_stopChoicesText);
 }
