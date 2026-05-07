@@ -11,8 +11,16 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <random>
 #include <string>
+
+enum class DefeatReason : std::uint8_t
+{
+    None,
+    Hp,
+    Arousal
+};
 
 class RunScreen final : public Screen
 {
@@ -48,7 +56,9 @@ private:
                               float dirY,
                               float speed,
                               float damage,
-                              ProjectileVisual visual);
+                              ProjectileVisual visual,
+                              float arousalDamage);
+    void applyArousalDamage(float amount);
     void updateProjectiles(float deltaTime);
     void handleProjectileCollisions();
     void updateLifetimes(float deltaTime);
@@ -69,6 +79,7 @@ private:
 
     bool m_hasUiFont{false};
     bool m_isDefeated{false};
+    DefeatReason m_defeatReason{DefeatReason::None};
     bool m_isLevelUpSelection{false};
     int m_pendingLevelUps{0};
     float m_hitFeedbackTimer{0.0f};

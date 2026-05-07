@@ -91,6 +91,7 @@ struct RangedAttackComponent
     float preferredDistance{320.0f};
     float retreatDistance{220.0f};
     ProjectileVisual visual{ProjectileVisual::Arrow};
+    float arousalDamage{0.0f};
 };
 
 struct ProjectileComponent
@@ -100,6 +101,7 @@ struct ProjectileComponent
     float vx{0.0f};
     float vy{0.0f};
     ProjectileVisual visual{ProjectileVisual::Arrow};
+    float arousalDamage{0.0f};
 };
 
 struct AutoAttackComponent

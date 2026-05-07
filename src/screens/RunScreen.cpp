@@ -57,6 +57,7 @@ constexpr float CasterProjectileSpeed = 230.0f;
 constexpr float CasterAttackCooldown = 1.8f;
 constexpr float CasterPreferredDistance = 400.0f;
 constexpr float CasterRetreatDistance = 280.0f;
+constexpr float CasterArousalDamage = 8.0f;
 
 constexpr float ArrowProjectileWidth = 14.0f;
 constexpr float ArrowProjectileHeight = 14.0f;
@@ -235,14 +236,22 @@ void RunScreen::update(float deltaTime)
 
     if (!m_isDefeated)
     {
-        if (const auto* health = m_world.getComponent<HealthComponent>(m_playerEntity))
+        const auto* health = m_world.getComponent<HealthComponent>(m_playerEntity);
+        const auto* arousal = m_world.getComponent<ArousalComponent>(m_playerEntity);
+
+        if (health && health->currentHp <= 0.0f)
         {
-            if (health->currentHp <= 0.0f)
-            {
-                m_isDefeated = true;
-                m_isLevelUpSelection = false;
-                m_pendingLevelUps = 0;
-            }
+            m_isDefeated = true;
+            m_defeatReason = DefeatReason::Hp;
+            m_isLevelUpSelection = false;
+            m_pendingLevelUps = 0;
+        }
+        else if (arousal && arousal->current >= arousal->max)
+        {
+            m_isDefeated = true;
+            m_defeatReason = DefeatReason::Arousal;
+            m_isLevelUpSelection = false;
+            m_pendingLevelUps = 0;
         }
     }
 
@@ -395,7 +404,8 @@ void RunScreen::spawnCasterEnemy(float x, float y)
         CasterAttackCooldown * 0.5f,
         CasterPreferredDistance,
         CasterRetreatDistance,
-        ProjectileVisual::MagicBolt
+        ProjectileVisual::MagicBolt,
+        CasterArousalDamage
     });
 }
 
@@ -641,7 +651,8 @@ void RunScreen::updateRangedAttacks(float deltaTime)
                 dirY,
                 attack.projectileSpeed,
                 attack.damage,
-                attack.visual);
+                attack.visual,
+                attack.arousalDamage);
 
             attack.cooldownLeft = attack.cooldown;
         });
@@ -653,7 +664,8 @@ void RunScreen::spawnEnemyProjectile(float originX,
                                      float dirY,
                                      float speed,
                                      float damage,
-                                     ProjectileVisual visual)
+                                     ProjectileVisual visual,
+                                     float arousalDamage)
 {
     float width = ArrowProjectileWidth;
     float height = ArrowProjectileHeight;
@@ -690,7 +702,8 @@ void RunScreen::spawnEnemyProjectile(float originX,
         damage,
         dirX * speed,
         dirY * speed,
-        visual
+        visual,
+        arousalDamage
     });
     m_world.addComponent<LifetimeComponent>(projectile, LifetimeComponent{lifetime});
 }
@@ -755,10 +768,30 @@ void RunScreen::handleProjectileCollisions()
             if (dx * dx + dy * dy <= minDistance * minDistance)
             {
                 playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - projectile.damage);
+                if (projectile.arousalDamage > 0.0f)
+                {
+                    applyArousalDamage(projectile.arousalDamage);
+                }
                 m_world.destroyEntityDeferred(entity);
                 m_hitFeedbackTimer = 0.18f;
             }
         });
+}
+
+void RunScreen::applyArousalDamage(float amount)
+{
+    if (amount <= 0.0f)
+    {
+        return;
+    }
+
+    auto* arousal = m_world.getComponent<ArousalComponent>(m_playerEntity);
+    if (!arousal)
+    {
+        return;
+    }
+
+    arousal->current = std::clamp(arousal->current + amount, 0.0f, arousal->max);
 }
 
 void RunScreen::updateAutoAttack(float deltaTime)
@@ -1091,8 +1124,25 @@ void RunScreen::updateHudText()
     const char* stateText = "Combat";
     if (m_isDefeated)
     {
-        stateText = "Defeat";
-        m_instruction.setString("Defeat (HP). Press Enter to return to base");
+        const char* reasonLabel = "Unknown";
+        switch (m_defeatReason)
+        {
+            case DefeatReason::Hp:
+                stateText = "Defeat (HP)";
+                reasonLabel = "HP";
+                break;
+            case DefeatReason::Arousal:
+                stateText = "Defeat (Arousal)";
+                reasonLabel = "Arousal";
+                break;
+            case DefeatReason::None:
+                stateText = "Defeat";
+                break;
+        }
+
+        std::ostringstream defeatMsg;
+        defeatMsg << "Defeat (" << reasonLabel << "). Press Enter to return to base";
+        m_instruction.setString(defeatMsg.str());
     }
     else if (m_isLevelUpSelection)
     {
