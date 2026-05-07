@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Build and run VampireSurvLike (no debugger)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "${workspaceFolder}\\build\\msvc\\Debug\\VampireSurvLike.exe",
+      "cwd": "${workspaceFolder}\\build\\msvc\\Debug",
+      "preLaunchTask": "cmake: build msvc debug"
+    },
+    {
+      "name": "Debug VampireSurvLike (requires C/C++ extension)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/msvc/Debug/VampireSurvLike.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/build/msvc/Debug",
+      "environment": [],
+      "console": "integratedTerminal",
+      "preLaunchTask": "cmake: build msvc debug"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "msvc",
+      "displayName": "MSVC x64 Debug",
+      "description": "Primary Windows/MSVC configuration for the MVP.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/msvc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SFML_DIR": "${sourceDir}/../SFML-2.6.2-windows-vc17-64-bit/lib/cmake/SFML"
+      }
+    },
+    {
+      "name": "mingw",
+      "displayName": "MinGW Debug (best effort)",
+      "description": "Best-effort MinGW compatibility configuration.",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SFML_DIR": "${sourceDir}/../SFML-2.6.2-windows-gcc-13.1.0-mingw-64-bit/lib/cmake/SFML"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-debug",
+      "displayName": "Build MSVC Debug",
+      "configurePreset": "msvc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "mingw-debug",
+      "displayName": "Build MinGW Debug",
+      "configurePreset": "mingw"
+    }
+  ]
+}
