@@ -27,6 +27,8 @@ endif()
 add_executable(VampireSurvLike
     src/main.cpp
     src/app/Application.cpp
+    src/assets/AssetManager.cpp
+    src/ecs/World.cpp
     src/screens/BaseScreen.cpp
     src/screens/RunScreen.cpp
 )
