@@ -28,10 +28,45 @@ constexpr float PlayerWidth = 48.0f;
 constexpr float PlayerHeight = 48.0f;
 constexpr float PlayerColliderRadius = 18.0f;
 
-constexpr float EnemyWidth = 40.0f;
-constexpr float EnemyHeight = 40.0f;
-constexpr float EnemyColliderRadius = 18.0f;
-constexpr std::size_t EnemySpawnCount = 6;
+constexpr float MeleeWidth = 40.0f;
+constexpr float MeleeHeight = 40.0f;
+constexpr float MeleeColliderRadius = 18.0f;
+constexpr float MeleeMoveSpeed = 140.0f;
+constexpr float MeleeMaxHp = 40.0f;
+constexpr float MeleeContactDamage = 8.0f;
+constexpr float MeleeContactCooldown = 0.9f;
+
+constexpr float RangedWidth = 36.0f;
+constexpr float RangedHeight = 36.0f;
+constexpr float RangedColliderRadius = 16.0f;
+constexpr float RangedMoveSpeed = 110.0f;
+constexpr float RangedMaxHp = 30.0f;
+constexpr float RangedProjectileDamage = 7.0f;
+constexpr float RangedProjectileSpeed = 280.0f;
+constexpr float RangedAttackCooldown = 1.4f;
+constexpr float RangedPreferredDistance = 320.0f;
+constexpr float RangedRetreatDistance = 220.0f;
+
+constexpr float CasterWidth = 44.0f;
+constexpr float CasterHeight = 44.0f;
+constexpr float CasterColliderRadius = 20.0f;
+constexpr float CasterMoveSpeed = 90.0f;
+constexpr float CasterMaxHp = 50.0f;
+constexpr float CasterProjectileDamage = 10.0f;
+constexpr float CasterProjectileSpeed = 230.0f;
+constexpr float CasterAttackCooldown = 1.8f;
+constexpr float CasterPreferredDistance = 400.0f;
+constexpr float CasterRetreatDistance = 280.0f;
+
+constexpr float ArrowProjectileWidth = 14.0f;
+constexpr float ArrowProjectileHeight = 14.0f;
+constexpr float ArrowProjectileRadius = 6.0f;
+constexpr float ArrowProjectileLifetime = 2.5f;
+
+constexpr float BoltProjectileWidth = 24.0f;
+constexpr float BoltProjectileHeight = 24.0f;
+constexpr float BoltProjectileRadius = 11.0f;
+constexpr float BoltProjectileLifetime = 3.0f;
 
 constexpr float XpPickupWidth = 20.0f;
 constexpr float XpPickupHeight = 20.0f;
@@ -39,6 +74,11 @@ constexpr float XpPickupColliderRadius = 12.0f;
 constexpr float XpPickupLifetime = 10.0f;
 
 constexpr int MeleeXpReward = 10;
+constexpr int RangedXpReward = 12;
+constexpr int CasterXpReward = 16;
+
+constexpr float EnemyTintRecoverySpeed = 320.0f;
+constexpr float StrafeSpeedFactor = 0.4f;
 
 const std::array<sf::Vector2f, 8> EnemySpawnPoints = {
     sf::Vector2f{80.0f, 80.0f},
@@ -59,10 +99,14 @@ RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont)
 {
     m_assetManager.loadTexture("player", "assets/textures/placeholders/player.png");
     m_assetManager.loadTexture("enemy_melee", "assets/textures/placeholders/enemy_melee.png");
+    m_assetManager.loadTexture("enemy_ranged", "assets/textures/placeholders/enemy_ranged.png");
+    m_assetManager.loadTexture("enemy_caster", "assets/textures/placeholders/enemy_caster.png");
+    m_assetManager.loadTexture("projectile_arrow", "assets/textures/placeholders/projectile_arrow.png");
+    m_assetManager.loadTexture("projectile_bolt", "assets/textures/placeholders/projectile_bolt.png");
     m_assetManager.loadTexture("xp_pickup", "assets/textures/placeholders/xp_pickup.png");
 
     createPlayerEntity();
-    spawnMeleeEnemies();
+    spawnEnemies();
 
     if (m_hasUiFont)
     {
@@ -171,9 +215,13 @@ void RunScreen::update(float deltaTime)
     if (!m_isDefeated && !m_isLevelUpSelection)
     {
         updatePlayerMovement(deltaTime);
-        updateEnemies(deltaTime);
+        updateEnemyAI(deltaTime);
         applyContactDamage(deltaTime);
+        updateRangedAttacks(deltaTime);
+        updateProjectiles(deltaTime);
+        handleProjectileCollisions();
         updateAutoAttack(deltaTime);
+        updateLifetimes(deltaTime);
         updatePickups(deltaTime);
         handleDeaths();
         handleLevelUpProgression();
@@ -251,31 +299,104 @@ void RunScreen::createPlayerEntity()
     m_world.addComponent<ExperienceComponent>(m_playerEntity, ExperienceComponent{1, 0, computeXpToNext(1)});
 }
 
-void RunScreen::spawnMeleeEnemies()
+void RunScreen::spawnEnemies()
 {
-    for (std::size_t i = 0; i < EnemySpawnCount && i < EnemySpawnPoints.size(); ++i)
+    if (EnemySpawnPoints.size() < 8)
     {
-        const EntityId enemy = m_world.createEntity();
-
-        m_world.addComponent<EnemyComponent>(enemy, EnemyComponent{EnemyArchetype::Melee, 140.0f});
-        m_world.addComponent<TransformComponent>(enemy, TransformComponent{
-            EnemySpawnPoints[i].x,
-            EnemySpawnPoints[i].y
-        });
-        m_world.addComponent<VelocityComponent>(enemy, VelocityComponent{0.0f, 0.0f});
-        m_world.addComponent<SpriteComponent>(enemy, SpriteComponent{
-            "enemy_melee",
-            EnemyWidth,
-            EnemyHeight,
-            255,
-            170,
-            170,
-            255
-        });
-        m_world.addComponent<ColliderComponent>(enemy, ColliderComponent{EnemyColliderRadius});
-        m_world.addComponent<HealthComponent>(enemy, HealthComponent{40.0f, 40.0f});
-        m_world.addComponent<ContactDamageComponent>(enemy, ContactDamageComponent{8.0f, 0.9f, 0.0f});
+        return;
     }
+
+    spawnMeleeEnemy(EnemySpawnPoints[0].x, EnemySpawnPoints[0].y);
+    spawnMeleeEnemy(EnemySpawnPoints[1].x, EnemySpawnPoints[1].y);
+    spawnMeleeEnemy(EnemySpawnPoints[2].x, EnemySpawnPoints[2].y);
+    spawnMeleeEnemy(EnemySpawnPoints[3].x, EnemySpawnPoints[3].y);
+
+    spawnRangedEnemy(EnemySpawnPoints[4].x, EnemySpawnPoints[4].y);
+    spawnRangedEnemy(EnemySpawnPoints[5].x, EnemySpawnPoints[5].y);
+
+    spawnCasterEnemy(EnemySpawnPoints[6].x, EnemySpawnPoints[6].y);
+    spawnCasterEnemy(EnemySpawnPoints[7].x, EnemySpawnPoints[7].y);
+}
+
+void RunScreen::spawnMeleeEnemy(float x, float y)
+{
+    constexpr std::uint8_t baseR = 255;
+    constexpr std::uint8_t baseG = 170;
+    constexpr std::uint8_t baseB = 170;
+
+    const EntityId enemy = m_world.createEntity();
+
+    m_world.addComponent<EnemyComponent>(enemy, EnemyComponent{
+        EnemyArchetype::Melee, MeleeMoveSpeed, baseR, baseG, baseB
+    });
+    m_world.addComponent<TransformComponent>(enemy, TransformComponent{x, y});
+    m_world.addComponent<VelocityComponent>(enemy, VelocityComponent{0.0f, 0.0f});
+    m_world.addComponent<SpriteComponent>(enemy, SpriteComponent{
+        "enemy_melee", MeleeWidth, MeleeHeight, baseR, baseG, baseB, 255
+    });
+    m_world.addComponent<ColliderComponent>(enemy, ColliderComponent{MeleeColliderRadius});
+    m_world.addComponent<HealthComponent>(enemy, HealthComponent{MeleeMaxHp, MeleeMaxHp});
+    m_world.addComponent<ContactDamageComponent>(enemy, ContactDamageComponent{
+        MeleeContactDamage, MeleeContactCooldown, 0.0f
+    });
+}
+
+void RunScreen::spawnRangedEnemy(float x, float y)
+{
+    constexpr std::uint8_t baseR = 150;
+    constexpr std::uint8_t baseG = 230;
+    constexpr std::uint8_t baseB = 160;
+
+    const EntityId enemy = m_world.createEntity();
+
+    m_world.addComponent<EnemyComponent>(enemy, EnemyComponent{
+        EnemyArchetype::Ranged, RangedMoveSpeed, baseR, baseG, baseB
+    });
+    m_world.addComponent<TransformComponent>(enemy, TransformComponent{x, y});
+    m_world.addComponent<VelocityComponent>(enemy, VelocityComponent{0.0f, 0.0f});
+    m_world.addComponent<SpriteComponent>(enemy, SpriteComponent{
+        "enemy_ranged", RangedWidth, RangedHeight, baseR, baseG, baseB, 255
+    });
+    m_world.addComponent<ColliderComponent>(enemy, ColliderComponent{RangedColliderRadius});
+    m_world.addComponent<HealthComponent>(enemy, HealthComponent{RangedMaxHp, RangedMaxHp});
+    m_world.addComponent<RangedAttackComponent>(enemy, RangedAttackComponent{
+        RangedProjectileDamage,
+        RangedProjectileSpeed,
+        RangedAttackCooldown,
+        RangedAttackCooldown * 0.5f,
+        RangedPreferredDistance,
+        RangedRetreatDistance,
+        ProjectileVisual::Arrow
+    });
+}
+
+void RunScreen::spawnCasterEnemy(float x, float y)
+{
+    constexpr std::uint8_t baseR = 200;
+    constexpr std::uint8_t baseG = 150;
+    constexpr std::uint8_t baseB = 250;
+
+    const EntityId enemy = m_world.createEntity();
+
+    m_world.addComponent<EnemyComponent>(enemy, EnemyComponent{
+        EnemyArchetype::Caster, CasterMoveSpeed, baseR, baseG, baseB
+    });
+    m_world.addComponent<TransformComponent>(enemy, TransformComponent{x, y});
+    m_world.addComponent<VelocityComponent>(enemy, VelocityComponent{0.0f, 0.0f});
+    m_world.addComponent<SpriteComponent>(enemy, SpriteComponent{
+        "enemy_caster", CasterWidth, CasterHeight, baseR, baseG, baseB, 255
+    });
+    m_world.addComponent<ColliderComponent>(enemy, ColliderComponent{CasterColliderRadius});
+    m_world.addComponent<HealthComponent>(enemy, HealthComponent{CasterMaxHp, CasterMaxHp});
+    m_world.addComponent<RangedAttackComponent>(enemy, RangedAttackComponent{
+        CasterProjectileDamage,
+        CasterProjectileSpeed,
+        CasterAttackCooldown,
+        CasterAttackCooldown * 0.5f,
+        CasterPreferredDistance,
+        CasterRetreatDistance,
+        ProjectileVisual::MagicBolt
+    });
 }
 
 void RunScreen::updatePlayerMovement(float deltaTime)
@@ -333,7 +454,7 @@ void RunScreen::updatePlayerMovement(float deltaTime)
     transform->y = std::clamp(transform->y, 0.0f, WindowHeight - sprite->height);
 }
 
-void RunScreen::updateEnemies(float deltaTime)
+void RunScreen::updateEnemyAI(float deltaTime)
 {
     auto* playerTransform = m_world.getComponent<TransformComponent>(m_playerEntity);
     auto* playerSprite = m_world.getComponent<SpriteComponent>(m_playerEntity);
@@ -346,36 +467,85 @@ void RunScreen::updateEnemies(float deltaTime)
     const float playerCenterX = playerTransform->x + playerSprite->width * 0.5f;
     const float playerCenterY = playerTransform->y + playerSprite->height * 0.5f;
 
-    m_world.forEach<EnemyComponent, TransformComponent, VelocityComponent, SpriteComponent>(
-        [&](EntityId, EnemyComponent& enemy, TransformComponent& transform, VelocityComponent& velocity, SpriteComponent& sprite)
+    auto recoverChannel = [&](std::uint8_t current, std::uint8_t target) -> std::uint8_t
+    {
+        const float c = static_cast<float>(current);
+        const float t = static_cast<float>(target);
+        const float step = EnemyTintRecoverySpeed * deltaTime;
+        if (c < t - step)
         {
-            float directionX = playerCenterX - (transform.x + sprite.width * 0.5f);
-            float directionY = playerCenterY - (transform.y + sprite.height * 0.5f);
-            const float lengthSquared = directionX * directionX + directionY * directionY;
+            return static_cast<std::uint8_t>(c + step);
+        }
+        if (c > t + step)
+        {
+            return static_cast<std::uint8_t>(c - step);
+        }
+        return target;
+    };
 
-            if (lengthSquared > 0.001f)
+    m_world.forEach<EnemyComponent, TransformComponent, VelocityComponent, SpriteComponent>(
+        [&](EntityId entity,
+            EnemyComponent& enemy,
+            TransformComponent& transform,
+            VelocityComponent& velocity,
+            SpriteComponent& sprite)
+        {
+            const float toPlayerX = playerCenterX - (transform.x + sprite.width * 0.5f);
+            const float toPlayerY = playerCenterY - (transform.y + sprite.height * 0.5f);
+            const float distanceSq = toPlayerX * toPlayerX + toPlayerY * toPlayerY;
+            const float distance = std::sqrt(distanceSq);
+
+            float dirX = 0.0f;
+            float dirY = 0.0f;
+            if (distance > 0.001f)
             {
-                const float invLength = 1.0f / std::sqrt(lengthSquared);
-                directionX *= invLength;
-                directionY *= invLength;
+                dirX = toPlayerX / distance;
+                dirY = toPlayerY / distance;
+            }
+
+            float moveX = 0.0f;
+            float moveY = 0.0f;
+
+            if (enemy.archetype == EnemyArchetype::Melee)
+            {
+                moveX = dirX * enemy.moveSpeed;
+                moveY = dirY * enemy.moveSpeed;
             }
             else
             {
-                directionX = 0.0f;
-                directionY = 0.0f;
+                const auto* attack = m_world.getComponent<RangedAttackComponent>(entity);
+                if (attack)
+                {
+                    if (distance < attack->retreatDistance)
+                    {
+                        moveX = -dirX * enemy.moveSpeed;
+                        moveY = -dirY * enemy.moveSpeed;
+                    }
+                    else if (distance > attack->preferredDistance)
+                    {
+                        moveX = dirX * enemy.moveSpeed;
+                        moveY = dirY * enemy.moveSpeed;
+                    }
+                    else
+                    {
+                        const float strafeSign = (entity & 1u) ? 1.0f : -1.0f;
+                        moveX = -dirY * enemy.moveSpeed * StrafeSpeedFactor * strafeSign;
+                        moveY = dirX * enemy.moveSpeed * StrafeSpeedFactor * strafeSign;
+                    }
+                }
             }
 
-            velocity.vx = directionX * enemy.moveSpeed;
-            velocity.vy = directionY * enemy.moveSpeed;
+            velocity.vx = moveX;
+            velocity.vy = moveY;
             transform.x += velocity.vx * deltaTime;
             transform.y += velocity.vy * deltaTime;
 
             transform.x = std::clamp(transform.x, 0.0f, WindowWidth - sprite.width);
             transform.y = std::clamp(transform.y, 0.0f, WindowHeight - sprite.height);
 
-            sprite.tintR = static_cast<std::uint8_t>(std::min(255.0f, static_cast<float>(sprite.tintR) + 320.0f * deltaTime));
-            sprite.tintG = static_cast<std::uint8_t>(std::min(255.0f, static_cast<float>(sprite.tintG) + 320.0f * deltaTime));
-            sprite.tintB = static_cast<std::uint8_t>(std::min(255.0f, static_cast<float>(sprite.tintB) + 320.0f * deltaTime));
+            sprite.tintR = recoverChannel(sprite.tintR, enemy.baseTintR);
+            sprite.tintG = recoverChannel(sprite.tintG, enemy.baseTintG);
+            sprite.tintB = recoverChannel(sprite.tintB, enemy.baseTintB);
         });
 }
 
@@ -421,6 +591,176 @@ void RunScreen::applyContactDamage(float deltaTime)
         });
 }
 
+void RunScreen::updateRangedAttacks(float deltaTime)
+{
+    auto* playerTransform = m_world.getComponent<TransformComponent>(m_playerEntity);
+    auto* playerSprite = m_world.getComponent<SpriteComponent>(m_playerEntity);
+
+    if (!playerTransform || !playerSprite)
+    {
+        return;
+    }
+
+    const float playerCenterX = playerTransform->x + playerSprite->width * 0.5f;
+    const float playerCenterY = playerTransform->y + playerSprite->height * 0.5f;
+
+    m_world.forEach<EnemyComponent, RangedAttackComponent, TransformComponent, SpriteComponent>(
+        [&](EntityId,
+            EnemyComponent&,
+            RangedAttackComponent& attack,
+            TransformComponent& transform,
+            SpriteComponent& sprite)
+        {
+            attack.cooldownLeft = std::max(0.0f, attack.cooldownLeft - deltaTime);
+            if (attack.cooldownLeft > 0.0f)
+            {
+                return;
+            }
+
+            const float originX = transform.x + sprite.width * 0.5f;
+            const float originY = transform.y + sprite.height * 0.5f;
+            const float dx = playerCenterX - originX;
+            const float dy = playerCenterY - originY;
+            const float distanceSq = dx * dx + dy * dy;
+            const float distance = std::sqrt(distanceSq);
+
+            const float maxFireRange = attack.preferredDistance + 220.0f;
+            if (distance < 1.0f || distance > maxFireRange)
+            {
+                return;
+            }
+
+            const float invDistance = 1.0f / distance;
+            const float dirX = dx * invDistance;
+            const float dirY = dy * invDistance;
+
+            spawnEnemyProjectile(
+                originX,
+                originY,
+                dirX,
+                dirY,
+                attack.projectileSpeed,
+                attack.damage,
+                attack.visual);
+
+            attack.cooldownLeft = attack.cooldown;
+        });
+}
+
+void RunScreen::spawnEnemyProjectile(float originX,
+                                     float originY,
+                                     float dirX,
+                                     float dirY,
+                                     float speed,
+                                     float damage,
+                                     ProjectileVisual visual)
+{
+    float width = ArrowProjectileWidth;
+    float height = ArrowProjectileHeight;
+    float radius = ArrowProjectileRadius;
+    float lifetime = ArrowProjectileLifetime;
+    std::uint8_t tintR = 255;
+    std::uint8_t tintG = 220;
+    std::uint8_t tintB = 100;
+    const char* textureId = "projectile_arrow";
+
+    if (visual == ProjectileVisual::MagicBolt)
+    {
+        width = BoltProjectileWidth;
+        height = BoltProjectileHeight;
+        radius = BoltProjectileRadius;
+        lifetime = BoltProjectileLifetime;
+        tintR = 220;
+        tintG = 130;
+        tintB = 255;
+        textureId = "projectile_bolt";
+    }
+
+    const EntityId projectile = m_world.createEntity();
+    m_world.addComponent<TransformComponent>(projectile, TransformComponent{
+        originX - width * 0.5f,
+        originY - height * 0.5f
+    });
+    m_world.addComponent<SpriteComponent>(projectile, SpriteComponent{
+        textureId, width, height, tintR, tintG, tintB, 255
+    });
+    m_world.addComponent<ColliderComponent>(projectile, ColliderComponent{radius});
+    m_world.addComponent<ProjectileComponent>(projectile, ProjectileComponent{
+        ProjectileOwner::Enemy,
+        damage,
+        dirX * speed,
+        dirY * speed,
+        visual
+    });
+    m_world.addComponent<LifetimeComponent>(projectile, LifetimeComponent{lifetime});
+}
+
+void RunScreen::updateProjectiles(float deltaTime)
+{
+    m_world.forEach<ProjectileComponent, TransformComponent, SpriteComponent>(
+        [&](EntityId entity,
+            ProjectileComponent& projectile,
+            TransformComponent& transform,
+            SpriteComponent& sprite)
+        {
+            transform.x += projectile.vx * deltaTime;
+            transform.y += projectile.vy * deltaTime;
+
+            const bool offScreen =
+                transform.x + sprite.width < 0.0f ||
+                transform.x > WindowWidth ||
+                transform.y + sprite.height < 0.0f ||
+                transform.y > WindowHeight;
+
+            if (offScreen)
+            {
+                m_world.destroyEntityDeferred(entity);
+            }
+        });
+}
+
+void RunScreen::handleProjectileCollisions()
+{
+    auto* playerTransform = m_world.getComponent<TransformComponent>(m_playerEntity);
+    auto* playerCollider = m_world.getComponent<ColliderComponent>(m_playerEntity);
+    auto* playerHealth = m_world.getComponent<HealthComponent>(m_playerEntity);
+    auto* playerSprite = m_world.getComponent<SpriteComponent>(m_playerEntity);
+
+    if (!playerTransform || !playerCollider || !playerHealth || !playerSprite)
+    {
+        return;
+    }
+
+    const float playerCenterX = playerTransform->x + playerSprite->width * 0.5f;
+    const float playerCenterY = playerTransform->y + playerSprite->height * 0.5f;
+
+    m_world.forEach<ProjectileComponent, TransformComponent, ColliderComponent, SpriteComponent>(
+        [&](EntityId entity,
+            ProjectileComponent& projectile,
+            TransformComponent& transform,
+            ColliderComponent& collider,
+            SpriteComponent& sprite)
+        {
+            if (projectile.owner != ProjectileOwner::Enemy)
+            {
+                return;
+            }
+
+            const float centerX = transform.x + sprite.width * 0.5f;
+            const float centerY = transform.y + sprite.height * 0.5f;
+            const float dx = playerCenterX - centerX;
+            const float dy = playerCenterY - centerY;
+            const float minDistance = playerCollider->radius + collider.radius;
+
+            if (dx * dx + dy * dy <= minDistance * minDistance)
+            {
+                playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - projectile.damage);
+                m_world.destroyEntityDeferred(entity);
+                m_hitFeedbackTimer = 0.18f;
+            }
+        });
+}
+
 void RunScreen::updateAutoAttack(float deltaTime)
 {
     auto* autoAttack = m_world.getComponent<AutoAttackComponent>(m_playerEntity);
@@ -457,7 +797,20 @@ void RunScreen::updateAutoAttack(float deltaTime)
     }
 }
 
-void RunScreen::updatePickups(float deltaTime)
+void RunScreen::updateLifetimes(float deltaTime)
+{
+    m_world.forEach<LifetimeComponent>(
+        [&](EntityId entity, LifetimeComponent& lifetime)
+        {
+            lifetime.remainingSeconds -= deltaTime;
+            if (lifetime.remainingSeconds <= 0.0f)
+            {
+                m_world.destroyEntityDeferred(entity);
+            }
+        });
+}
+
+void RunScreen::updatePickups(float /*deltaTime*/)
 {
     auto* playerTransform = m_world.getComponent<TransformComponent>(m_playerEntity);
     auto* playerCollider = m_world.getComponent<ColliderComponent>(m_playerEntity);
@@ -468,16 +821,6 @@ void RunScreen::updatePickups(float deltaTime)
     {
         return;
     }
-
-    m_world.forEach<LifetimeComponent>(
-        [&](EntityId entity, LifetimeComponent& lifetime)
-        {
-            lifetime.remainingSeconds -= deltaTime;
-            if (lifetime.remainingSeconds <= 0.0f)
-            {
-                m_world.destroyEntityDeferred(entity);
-            }
-        });
 
     const float playerCenterX = playerTransform->x + playerSprite->width * 0.5f;
     const float playerCenterY = playerTransform->y + playerSprite->height * 0.5f;
@@ -518,12 +861,28 @@ void RunScreen::handleDeaths()
             }
 
             int xpReward = 0;
-            if (enemy.archetype == EnemyArchetype::Melee)
+            switch (enemy.archetype)
             {
-                xpReward = MeleeXpReward;
+                case EnemyArchetype::Melee:
+                    xpReward = MeleeXpReward;
+                    break;
+                case EnemyArchetype::Ranged:
+                    xpReward = RangedXpReward;
+                    break;
+                case EnemyArchetype::Caster:
+                    xpReward = CasterXpReward;
+                    break;
             }
 
-            spawnXpPickup(transform.x + EnemyWidth * 0.5f, transform.y + EnemyHeight * 0.5f, xpReward);
+            float halfW = 0.0f;
+            float halfH = 0.0f;
+            if (const auto* sprite = m_world.getComponent<SpriteComponent>(entity))
+            {
+                halfW = sprite->width * 0.5f;
+                halfH = sprite->height * 0.5f;
+            }
+
+            spawnXpPickup(transform.x + halfW, transform.y + halfH, xpReward);
             m_world.destroyEntityDeferred(entity);
         });
 }
@@ -644,6 +1003,17 @@ std::size_t RunScreen::countAliveEnemies()
     return count;
 }
 
+std::size_t RunScreen::countProjectiles()
+{
+    std::size_t count = 0;
+    m_world.forEach<ProjectileComponent>(
+        [&](EntityId, ProjectileComponent&)
+        {
+            ++count;
+        });
+    return count;
+}
+
 void RunScreen::rollLevelUpChoices()
 {
     const auto& perks = getAllPerks();
@@ -742,6 +1112,7 @@ void RunScreen::updateHudText()
        << "   Lvl: " << experience->level
        << "   XP: " << experience->currentXp << "/" << experience->xpToNext
        << "   Enemies: " << countAliveEnemies()
+       << "   Projectiles: " << countProjectiles()
        << "   AutoAtk CD: " << autoAttack->cooldownLeft
        << "   Mult(Dmg/Int/Spd/Rng): "
        << m_runtimeStats.damageMultiplier << "/"

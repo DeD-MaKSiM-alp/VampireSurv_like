@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assets/AssetManager.h"
+#include "ecs/Components.h"
 #include "ecs/World.h"
 #include "game/Perks.h"
 #include "screens/Screen.h"
@@ -32,11 +33,25 @@ private:
     };
 
     void createPlayerEntity();
-    void spawnMeleeEnemies();
+    void spawnEnemies();
+    void spawnMeleeEnemy(float x, float y);
+    void spawnRangedEnemy(float x, float y);
+    void spawnCasterEnemy(float x, float y);
     void updatePlayerMovement(float deltaTime);
-    void updateEnemies(float deltaTime);
+    void updateEnemyAI(float deltaTime);
     void applyContactDamage(float deltaTime);
     void updateAutoAttack(float deltaTime);
+    void updateRangedAttacks(float deltaTime);
+    void spawnEnemyProjectile(float originX,
+                              float originY,
+                              float dirX,
+                              float dirY,
+                              float speed,
+                              float damage,
+                              ProjectileVisual visual);
+    void updateProjectiles(float deltaTime);
+    void handleProjectileCollisions();
+    void updateLifetimes(float deltaTime);
     void updatePickups(float deltaTime);
     void handleDeaths();
     void handleLevelUpProgression();
@@ -45,6 +60,7 @@ private:
     EntityId findNearestEnemyInRange(float range);
     void applyDamageToEntity(EntityId entity, float damage);
     std::size_t countAliveEnemies();
+    std::size_t countProjectiles();
     void rollLevelUpChoices();
     void applyPerk(PerkId perkId);
     void updateHudText();

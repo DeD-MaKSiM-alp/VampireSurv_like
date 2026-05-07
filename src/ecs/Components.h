@@ -49,13 +49,18 @@ struct PlayerTagComponent
 
 enum class EnemyArchetype : std::uint8_t
 {
-    Melee
+    Melee,
+    Ranged,
+    Caster
 };
 
 struct EnemyComponent
 {
     EnemyArchetype archetype{EnemyArchetype::Melee};
     float moveSpeed{140.0f};
+    std::uint8_t baseTintR{255};
+    std::uint8_t baseTintG{255};
+    std::uint8_t baseTintB{255};
 };
 
 struct ContactDamageComponent
@@ -63,6 +68,38 @@ struct ContactDamageComponent
     float damage{8.0f};
     float hitCooldown{0.9f};
     float cooldownLeft{0.0f};
+};
+
+enum class ProjectileVisual : std::uint8_t
+{
+    Arrow,
+    MagicBolt
+};
+
+enum class ProjectileOwner : std::uint8_t
+{
+    Player,
+    Enemy
+};
+
+struct RangedAttackComponent
+{
+    float damage{7.0f};
+    float projectileSpeed{280.0f};
+    float cooldown{1.4f};
+    float cooldownLeft{0.0f};
+    float preferredDistance{320.0f};
+    float retreatDistance{220.0f};
+    ProjectileVisual visual{ProjectileVisual::Arrow};
+};
+
+struct ProjectileComponent
+{
+    ProjectileOwner owner{ProjectileOwner::Enemy};
+    float damage{0.0f};
+    float vx{0.0f};
+    float vy{0.0f};
+    ProjectileVisual visual{ProjectileVisual::Arrow};
 };
 
 struct AutoAttackComponent
