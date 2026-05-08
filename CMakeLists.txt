@@ -30,6 +30,7 @@ add_executable(VampireSurvLike
     src/assets/AssetManager.cpp
     src/ecs/World.cpp
     src/game/Perks.cpp
+    src/game/PersistentState.cpp
     src/screens/BaseScreen.cpp
     src/screens/RunScreen.cpp
 )

@@ -4,6 +4,7 @@
 #include "ecs/Components.h"
 #include "ecs/World.h"
 #include "game/Perks.h"
+#include "game/PersistentState.h"
 #include "screens/Screen.h"
 
 #include <SFML/Graphics/Font.hpp>
@@ -25,7 +26,7 @@ enum class DefeatReason : std::uint8_t
 class RunScreen final : public Screen
 {
 public:
-    RunScreen(const sf::Font& uiFont, bool hasUiFont);
+    RunScreen(const sf::Font& uiFont, bool hasUiFont, PersistentState& persistentState);
 
     std::optional<GameState> handleEvent(const sf::Event& event) override;
     void update(float deltaTime) override;
@@ -44,6 +45,8 @@ private:
     void spawnMeleeEnemy(float x, float y);
     void spawnRangedEnemy(float x, float y);
     void spawnCasterEnemy(float x, float y);
+    void spawnResourcePickup(float x, float y, int amount);
+    void commitRunResultIfNeeded(LastRunOutcome outcome);
     void updateWaveSystem();
     bool tryFinishRun();
     void updatePlayerMovement(float deltaTime);
@@ -86,11 +89,14 @@ private:
     DefeatReason m_defeatReason{DefeatReason::None};
     bool m_isLevelUpSelection{false};
     bool m_isStopped{false};
+    bool m_resultApplied{false};
     int m_pendingLevelUps{0};
+    int m_runResourceRaw{0};
     float m_hitFeedbackTimer{0.0f};
     float m_runDuration{180.0f};
     float m_runTimeLeft{180.0f};
     std::array<bool, WaveCount> m_wavesSpawned{};
+    PersistentState& m_persistentState;
     AssetManager m_assetManager;
     World m_world;
     EntityId m_playerEntity{InvalidEntity};

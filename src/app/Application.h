@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/GameState.h"
+#include "game/PersistentState.h"
 
 #include <SFML/Graphics/Font.hpp>
 #include <SFML/Graphics/RenderWindow.hpp>
@@ -29,4 +30,5 @@ private:
     bool m_hasUiFont{false};
     GameState m_state{GameState::Base};
     std::unique_ptr<Screen> m_screen;
+    PersistentState m_persistentState;
 };

@@ -97,11 +97,11 @@ void Application::changeState(GameState nextState)
     {
         case GameState::Base:
             m_window.setTitle("VampireSurvLike - Base");
-            m_screen = std::make_unique<BaseScreen>(m_uiFont, m_hasUiFont);
+            m_screen = std::make_unique<BaseScreen>(m_uiFont, m_hasUiFont, m_persistentState);
             break;
         case GameState::Run:
             m_window.setTitle("VampireSurvLike - Run");
-            m_screen = std::make_unique<RunScreen>(m_uiFont, m_hasUiFont);
+            m_screen = std::make_unique<RunScreen>(m_uiFont, m_hasUiFont, m_persistentState);
             break;
     }
 }

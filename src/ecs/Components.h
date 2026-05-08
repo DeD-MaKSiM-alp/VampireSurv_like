@@ -121,7 +121,8 @@ struct ExperienceComponent
 
 enum class PickupType : std::uint8_t
 {
-    Xp
+    Xp,
+    Resource
 };
 
 struct PickupComponent

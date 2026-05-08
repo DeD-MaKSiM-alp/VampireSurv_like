@@ -74,9 +74,18 @@ constexpr float XpPickupHeight = 20.0f;
 constexpr float XpPickupColliderRadius = 12.0f;
 constexpr float XpPickupLifetime = 10.0f;
 
+constexpr float ResourcePickupWidth = 26.0f;
+constexpr float ResourcePickupHeight = 26.0f;
+constexpr float ResourcePickupColliderRadius = 14.0f;
+constexpr float ResourcePickupLifetime = 12.0f;
+
 constexpr int MeleeXpReward = 10;
 constexpr int RangedXpReward = 12;
 constexpr int CasterXpReward = 16;
+
+constexpr int MeleeResourceReward = 1;
+constexpr int RangedResourceReward = 2;
+constexpr int CasterResourceReward = 3;
 
 constexpr float EnemyTintRecoverySpeed = 320.0f;
 constexpr float StrafeSpeedFactor = 0.4f;
@@ -110,10 +119,11 @@ constexpr float RunDurationSeconds = 180.0f;
 
 }
 
-RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont)
+RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont, PersistentState& persistentState)
     : m_hasUiFont(hasUiFont)
     , m_runDuration(RunDurationSeconds)
     , m_runTimeLeft(RunDurationSeconds)
+    , m_persistentState(persistentState)
     , m_rng(std::random_device{}())
 {
     m_assetManager.loadTexture("player", "assets/textures/placeholders/player.png");
@@ -123,6 +133,7 @@ RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont)
     m_assetManager.loadTexture("projectile_arrow", "assets/textures/placeholders/projectile_arrow.png");
     m_assetManager.loadTexture("projectile_bolt", "assets/textures/placeholders/projectile_bolt.png");
     m_assetManager.loadTexture("xp_pickup", "assets/textures/placeholders/xp_pickup.png");
+    m_assetManager.loadTexture("resource_pickup", "assets/textures/placeholders/resource_pickup.png");
 
     createPlayerEntity();
 
@@ -190,6 +201,11 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
     {
         if (event.key.code == sf::Keyboard::Enter)
         {
+            const LastRunOutcome defeatOutcome =
+                (m_defeatReason == DefeatReason::Arousal)
+                    ? LastRunOutcome::DefeatArousal
+                    : LastRunOutcome::DefeatHp;
+            commitRunResultIfNeeded(defeatOutcome);
             return GameState::Base;
         }
         return std::nullopt;
@@ -201,6 +217,7 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
             || event.key.code == sf::Keyboard::Numpad2
             || event.key.code == sf::Keyboard::Escape)
         {
+            commitRunResultIfNeeded(LastRunOutcome::Stopped);
             return GameState::Base;
         }
 
@@ -255,6 +272,11 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
 
     if (event.key.code == sf::Keyboard::Escape)
     {
+        // Esc during an active run is treated as a legal Stopped exit (full
+        // resource grant). This is the fixed MVP policy so the player can
+        // exercise the Base UI without dragging through the full 3-minute
+        // timer. Any change here must be reflected in the GDD.
+        commitRunResultIfNeeded(LastRunOutcome::Stopped);
         return GameState::Base;
     }
 
@@ -988,27 +1010,37 @@ void RunScreen::updatePickups(float /*deltaTime*/)
     const float playerCenterY = playerTransform->y + playerSprite->height * 0.5f;
 
     int gainedXp = 0;
+    int gainedResource = 0;
     m_world.forEach<PickupComponent, TransformComponent, ColliderComponent>(
         [&](EntityId pickupEntity, PickupComponent& pickup, TransformComponent& transform, ColliderComponent& collider)
         {
-            if (pickup.type != PickupType::Xp)
+            const float dx = playerCenterX - transform.x;
+            const float dy = playerCenterY - transform.y;
+            const float pickupRadius = playerCollider->radius + collider.radius;
+            if (dx * dx + dy * dy > pickupRadius * pickupRadius)
             {
                 return;
             }
 
-            const float dx = playerCenterX - transform.x;
-            const float dy = playerCenterY - transform.y;
-            const float pickupRadius = playerCollider->radius + collider.radius;
-            if (dx * dx + dy * dy <= pickupRadius * pickupRadius)
+            switch (pickup.type)
             {
-                gainedXp += pickup.value;
-                m_world.destroyEntityDeferred(pickupEntity);
+                case PickupType::Xp:
+                    gainedXp += pickup.value;
+                    break;
+                case PickupType::Resource:
+                    gainedResource += pickup.value;
+                    break;
             }
+            m_world.destroyEntityDeferred(pickupEntity);
         });
 
     if (gainedXp > 0)
     {
         experience->currentXp += gainedXp;
+    }
+    if (gainedResource > 0)
+    {
+        m_runResourceRaw += gainedResource;
     }
 }
 
@@ -1023,16 +1055,20 @@ void RunScreen::handleDeaths()
             }
 
             int xpReward = 0;
+            int resourceReward = 0;
             switch (enemy.archetype)
             {
                 case EnemyArchetype::Melee:
                     xpReward = MeleeXpReward;
+                    resourceReward = MeleeResourceReward;
                     break;
                 case EnemyArchetype::Ranged:
                     xpReward = RangedXpReward;
+                    resourceReward = RangedResourceReward;
                     break;
                 case EnemyArchetype::Caster:
                     xpReward = CasterXpReward;
+                    resourceReward = CasterResourceReward;
                     break;
             }
 
@@ -1044,7 +1080,14 @@ void RunScreen::handleDeaths()
                 halfH = sprite->height * 0.5f;
             }
 
-            spawnXpPickup(transform.x + halfW, transform.y + halfH, xpReward);
+            const float centerX = transform.x + halfW;
+            const float centerY = transform.y + halfH;
+
+            spawnXpPickup(centerX, centerY, xpReward);
+            // Resource drop is gated by an explicit constexpr probability of 1.0f
+            // for MVP determinism; tune ResourceDropChance below if randomization
+            // is later required.
+            spawnResourcePickup(centerX, centerY, resourceReward);
             m_world.destroyEntityDeferred(entity);
         });
 }
@@ -1098,6 +1141,43 @@ void RunScreen::spawnXpPickup(float x, float y, int xpValue)
     m_world.addComponent<ColliderComponent>(pickup, ColliderComponent{XpPickupColliderRadius});
     m_world.addComponent<PickupComponent>(pickup, PickupComponent{PickupType::Xp, xpValue});
     m_world.addComponent<LifetimeComponent>(pickup, LifetimeComponent{XpPickupLifetime});
+}
+
+void RunScreen::spawnResourcePickup(float x, float y, int amount)
+{
+    if (amount <= 0)
+    {
+        return;
+    }
+
+    const EntityId pickup = m_world.createEntity();
+    m_world.addComponent<TransformComponent>(pickup, TransformComponent{
+        x - ResourcePickupWidth * 0.5f,
+        y - ResourcePickupHeight * 0.5f
+    });
+    m_world.addComponent<SpriteComponent>(pickup, SpriteComponent{
+        "resource_pickup",
+        ResourcePickupWidth,
+        ResourcePickupHeight,
+        255,
+        210,
+        80,
+        255
+    });
+    m_world.addComponent<ColliderComponent>(pickup, ColliderComponent{ResourcePickupColliderRadius});
+    m_world.addComponent<PickupComponent>(pickup, PickupComponent{PickupType::Resource, amount});
+    m_world.addComponent<LifetimeComponent>(pickup, LifetimeComponent{ResourcePickupLifetime});
+}
+
+void RunScreen::commitRunResultIfNeeded(LastRunOutcome outcome)
+{
+    if (m_resultApplied)
+    {
+        return;
+    }
+
+    m_persistentState.applyRunResult(m_runResourceRaw, outcome);
+    m_resultApplied = true;
 }
 
 EntityId RunScreen::findNearestEnemyInRange(float range)
@@ -1269,14 +1349,20 @@ void RunScreen::updateHudText()
                 break;
         }
 
+        const int grantedPreview = static_cast<int>(std::floor(static_cast<float>(m_runResourceRaw) * 0.3f));
         std::ostringstream defeatMsg;
-        defeatMsg << "Defeat (" << reasonLabel << "). Press Enter to return to base";
+        defeatMsg << "Defeat (" << reasonLabel << "). Resource granted: "
+                  << grantedPreview << " / " << m_runResourceRaw
+                  << ". Press Enter to return to base";
         m_instruction.setString(defeatMsg.str());
     }
     else if (m_isStopped)
     {
         stateText = "Stopped";
-        m_instruction.setString("Run finished. 1: Continue (stub) | 2: Exit to base");
+        std::ostringstream stoppedMsg;
+        stoppedMsg << "Run finished. Resource collected: " << m_runResourceRaw
+                   << ". 1: Continue (stub) | 2: Exit to base";
+        m_instruction.setString(stoppedMsg.str());
     }
     else if (m_isLevelUpSelection)
     {
@@ -1303,6 +1389,7 @@ void RunScreen::updateHudText()
        << "   Arousal: " << static_cast<int>(arousal->current) << "/" << static_cast<int>(arousal->max)
        << "   Lvl: " << experience->level
        << "   XP: " << experience->currentXp << "/" << experience->xpToNext
+       << "   Resource: " << m_runResourceRaw
        << "   Enemies: " << countAliveEnemies()
        << "   Projectiles: " << countProjectiles()
        << "   AutoAtk CD: " << autoAttack->cooldownLeft
@@ -1373,8 +1460,10 @@ void RunScreen::renderStopOverlay(sf::RenderWindow& window)
     m_stopTitleText.setString("Run Stopped");
     window.draw(m_stopTitleText);
 
-    m_stopChoicesText.setString(
-        "1) Continue (MVP stub)\n"
-        "2) Exit to Base");
+    std::ostringstream choices;
+    choices << "Resource collected: " << m_runResourceRaw << '\n'
+            << "1) Continue (MVP stub)\n"
+            << "2) Exit to Base";
+    m_stopChoicesText.setString(choices.str());
     window.draw(m_stopChoicesText);
 }
