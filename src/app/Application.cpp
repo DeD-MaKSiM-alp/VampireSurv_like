@@ -27,6 +27,9 @@ Application::Application()
 {
     m_window.setFramerateLimit(FrameRateLimit);
     m_hasUiFont = loadUiFont();
+    // Stage 14: best-effort load of persisted state. Missing or corrupted file
+    // logs a [save] line and leaves m_persistentState at default values.
+    loadFromFile(m_persistentState, "save.txt");
     changeState(GameState::Base);
 }
 

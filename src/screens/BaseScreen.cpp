@@ -90,17 +90,22 @@ BaseScreen::BaseScreen(const sf::Font& uiFont, bool hasUiFont, const PersistentS
     m_resultText.setFillColor(sf::Color(220, 220, 245));
     m_resultText.setPosition(64.f, 260.f);
 
+    m_statsText.setFont(uiFont);
+    m_statsText.setCharacterSize(20);
+    m_statsText.setFillColor(sf::Color(210, 220, 240));
+    m_statsText.setPosition(64.f, 295.f);
+
     m_passivesText.setFont(uiFont);
     m_passivesText.setCharacterSize(20);
     m_passivesText.setFillColor(sf::Color(255, 200, 200));
-    m_passivesText.setPosition(64.f, 295.f);
+    m_passivesText.setPosition(64.f, 325.f);
 
     m_hintText.setFont(uiFont);
     m_hintText.setCharacterSize(16);
     m_hintText.setFillColor(sf::Color(150, 160, 180));
     m_hintText.setString("Result is granted on return from run (Stop / Defeat). "
                          "Base only reads PersistentState.");
-    m_hintText.setPosition(64.f, 335.f);
+    m_hintText.setPosition(64.f, 365.f);
 
     refreshResultText();
 }
@@ -130,6 +135,7 @@ void BaseScreen::render(sf::RenderWindow& window)
         window.draw(m_instruction);
         window.draw(m_totalText);
         window.draw(m_resultText);
+        window.draw(m_statsText);
         window.draw(m_passivesText);
         window.draw(m_hintText);
     }
@@ -160,4 +166,10 @@ void BaseScreen::refreshResultText()
     }
 
     m_passivesText.setString(formatPassiveList(m_persistentState));
+
+    std::ostringstream stats;
+    stats << "Runs: " << m_persistentState.runsCount()
+          << "   HP defeats: " << m_persistentState.hpDefeatsCount()
+          << "   Arousal defeats: " << m_persistentState.arousalDefeatsCount();
+    m_statsText.setString(stats.str());
 }

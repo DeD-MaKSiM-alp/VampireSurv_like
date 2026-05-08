@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <iostream>
 #include <numeric>
 #include <sstream>
 #include <vector>
@@ -1193,6 +1194,13 @@ void RunScreen::commitRunResultIfNeeded(LastRunOutcome outcome)
     // DefeatArousal. Stopped/None branches inside applyRunResult ignore RNG.
     m_persistentState.applyRunResult(m_runResourceRaw, outcome, &m_rng);
     m_resultApplied = true;
+
+    // Single point of save on disk per run (stage 14). Failure is logged but
+    // does not block the return-to-base flow.
+    if (!saveToFile(m_persistentState, "save.txt"))
+    {
+        std::cerr << "[save] failed to write\n";
+    }
 }
 
 EntityId RunScreen::findNearestEnemyInRange(float range)
