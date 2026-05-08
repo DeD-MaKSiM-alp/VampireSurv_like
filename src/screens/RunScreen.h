@@ -92,6 +92,8 @@ private:
     bool m_resultApplied{false};
     int m_pendingLevelUps{0};
     int m_runResourceRaw{0};
+    float m_incomingHpMultiplier{1.0f};
+    float m_incomingArousalMultiplier{1.0f};
     float m_hitFeedbackTimer{0.0f};
     float m_runDuration{180.0f};
     float m_runTimeLeft{180.0f};

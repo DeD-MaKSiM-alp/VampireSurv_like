@@ -25,5 +25,6 @@ private:
     sf::Text m_instruction;
     sf::Text m_resultText;
     sf::Text m_totalText;
+    sf::Text m_passivesText;
     sf::Text m_hintText;
 };

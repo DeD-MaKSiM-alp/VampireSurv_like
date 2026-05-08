@@ -1,5 +1,6 @@
 #include "screens/BaseScreen.h"
 
+#include "game/DefeatPassives.h"
 #include "game/PersistentState.h"
 
 #include <SFML/Graphics/Color.hpp>
@@ -7,6 +8,7 @@
 #include <SFML/Window/Keyboard.hpp>
 
 #include <sstream>
+#include <string>
 
 namespace
 {
@@ -20,6 +22,40 @@ const char* outcomeLabel(LastRunOutcome outcome)
         case LastRunOutcome::None:          return "None";
     }
     return "Unknown";
+}
+
+std::string formatPassiveList(const PersistentState& state)
+{
+    const auto& all = getAllDefeatPassives();
+    bool any = false;
+    std::ostringstream out;
+    out << "Defeat passives: ";
+
+    for (const DefeatPassiveDefinition& def : all)
+    {
+        const int count = state.defeatPassiveCount(def.id);
+        if (count <= 0)
+        {
+            continue;
+        }
+
+        if (any)
+        {
+            out << ", ";
+        }
+        out << def.name;
+        if (count > 1)
+        {
+            out << " x" << count;
+        }
+        any = true;
+    }
+
+    if (!any)
+    {
+        return "Defeat passives: none";
+    }
+    return out.str();
 }
 }
 
@@ -54,12 +90,17 @@ BaseScreen::BaseScreen(const sf::Font& uiFont, bool hasUiFont, const PersistentS
     m_resultText.setFillColor(sf::Color(220, 220, 245));
     m_resultText.setPosition(64.f, 260.f);
 
+    m_passivesText.setFont(uiFont);
+    m_passivesText.setCharacterSize(20);
+    m_passivesText.setFillColor(sf::Color(255, 200, 200));
+    m_passivesText.setPosition(64.f, 295.f);
+
     m_hintText.setFont(uiFont);
     m_hintText.setCharacterSize(16);
     m_hintText.setFillColor(sf::Color(150, 160, 180));
     m_hintText.setString("Result is granted on return from run (Stop / Defeat). "
                          "Base only reads PersistentState.");
-    m_hintText.setPosition(64.f, 310.f);
+    m_hintText.setPosition(64.f, 335.f);
 
     refreshResultText();
 }
@@ -89,6 +130,7 @@ void BaseScreen::render(sf::RenderWindow& window)
         window.draw(m_instruction);
         window.draw(m_totalText);
         window.draw(m_resultText);
+        window.draw(m_passivesText);
         window.draw(m_hintText);
     }
 }
@@ -107,12 +149,15 @@ void BaseScreen::refreshResultText()
     if (m_persistentState.lastRunOutcome() == LastRunOutcome::None)
     {
         m_resultText.setString("Last run: No runs yet");
-        return;
+    }
+    else
+    {
+        std::ostringstream result;
+        result << "Last run: raw " << m_persistentState.lastRunResourceRaw()
+               << ", granted " << m_persistentState.lastRunResourceGranted()
+               << ", outcome " << outcomeLabel(m_persistentState.lastRunOutcome());
+        m_resultText.setString(result.str());
     }
 
-    std::ostringstream result;
-    result << "Last run: raw " << m_persistentState.lastRunResourceRaw()
-           << ", granted " << m_persistentState.lastRunResourceGranted()
-           << ", outcome " << outcomeLabel(m_persistentState.lastRunOutcome());
-    m_resultText.setString(result.str());
+    m_passivesText.setString(formatPassiveList(m_persistentState));
 }

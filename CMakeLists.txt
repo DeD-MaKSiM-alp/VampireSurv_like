@@ -29,6 +29,7 @@ add_executable(VampireSurvLike
     src/app/Application.cpp
     src/assets/AssetManager.cpp
     src/ecs/World.cpp
+    src/game/DefeatPassives.cpp
     src/game/Perks.cpp
     src/game/PersistentState.cpp
     src/screens/BaseScreen.cpp

@@ -1,6 +1,7 @@
 #include "screens/RunScreen.h"
 
 #include "ecs/Components.h"
+#include "game/DefeatPassives.h"
 
 #include <SFML/Graphics/Color.hpp>
 #include <SFML/Graphics/RectangleShape.hpp>
@@ -134,6 +135,15 @@ RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont, PersistentState& pe
     m_assetManager.loadTexture("projectile_bolt", "assets/textures/placeholders/projectile_bolt.png");
     m_assetManager.loadTexture("xp_pickup", "assets/textures/placeholders/xp_pickup.png");
     m_assetManager.loadTexture("resource_pickup", "assets/textures/placeholders/resource_pickup.png");
+
+    // Defeat passives are applied at run start. They scale runtime stats from
+    // their default 1.0 baselines and store incoming-damage multipliers as
+    // separate fields applied at damage-application sites. Computed once.
+    const DefeatPassiveModifiers mods = computeModifiers(m_persistentState);
+    m_runtimeStats.speedMultiplier *= mods.speedMul;
+    m_runtimeStats.attackIntervalMultiplier *= mods.attackIntervalMul;
+    m_incomingHpMultiplier = mods.incomingHpMul;
+    m_incomingArousalMultiplier = mods.incomingArousalMul;
 
     createPlayerEntity();
 
@@ -746,7 +756,8 @@ void RunScreen::applyContactDamage(float deltaTime)
 
             if (dx * dx + dy * dy <= minDistance * minDistance && contactDamage.cooldownLeft <= 0.0f)
             {
-                playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - contactDamage.damage);
+                const float dmg = contactDamage.damage * m_incomingHpMultiplier;
+                playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - dmg);
                 contactDamage.cooldownLeft = contactDamage.hitCooldown;
             }
         });
@@ -918,7 +929,8 @@ void RunScreen::handleProjectileCollisions()
 
             if (dx * dx + dy * dy <= minDistance * minDistance)
             {
-                playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - projectile.damage);
+                const float dmg = projectile.damage * m_incomingHpMultiplier;
+                playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - dmg);
                 if (projectile.arousalDamage > 0.0f)
                 {
                     applyArousalDamage(projectile.arousalDamage);
@@ -942,7 +954,8 @@ void RunScreen::applyArousalDamage(float amount)
         return;
     }
 
-    arousal->current = std::clamp(arousal->current + amount, 0.0f, arousal->max);
+    const float scaled = amount * m_incomingArousalMultiplier;
+    arousal->current = std::clamp(arousal->current + scaled, 0.0f, arousal->max);
 }
 
 void RunScreen::updateAutoAttack(float deltaTime)
@@ -1176,7 +1189,9 @@ void RunScreen::commitRunResultIfNeeded(LastRunOutcome outcome)
         return;
     }
 
-    m_persistentState.applyRunResult(m_runResourceRaw, outcome);
+    // Pass RNG so PersistentState can grant a defeat passive on DefeatHp /
+    // DefeatArousal. Stopped/None branches inside applyRunResult ignore RNG.
+    m_persistentState.applyRunResult(m_runResourceRaw, outcome, &m_rng);
     m_resultApplied = true;
 }
 
@@ -1397,7 +1412,10 @@ void RunScreen::updateHudText()
        << m_runtimeStats.damageMultiplier << "/"
        << m_runtimeStats.attackIntervalMultiplier << "/"
        << m_runtimeStats.speedMultiplier << "/"
-       << m_runtimeStats.attackRangeMultiplier;
+       << m_runtimeStats.attackRangeMultiplier
+       << "   Mods(InHp/InAro): "
+       << m_incomingHpMultiplier << "/"
+       << m_incomingArousalMultiplier;
     m_hudText.setString(ss.str());
 
     if (m_lastSelectedPerk.empty())
