@@ -48,6 +48,7 @@ private:
     void spawnResourcePickup(float x, float y, int amount);
     void commitRunResultIfNeeded(LastRunOutcome outcome);
     void updateWaveSystem();
+    void spawnStressWave();
     bool tryFinishRun();
     void updatePlayerMovement(float deltaTime);
     void updateEnemyAI(float deltaTime);
@@ -75,6 +76,7 @@ private:
     void applyDamageToEntity(EntityId entity, float damage);
     std::size_t countAliveEnemies();
     std::size_t countProjectiles();
+    std::size_t countPickups();
     void rollLevelUpChoices();
     void applyPerk(PerkId perkId);
     void updateHudText();
@@ -99,6 +101,20 @@ private:
     float m_hitFeedbackTimer{0.0f};
     float m_runDuration{180.0f};
     float m_runTimeLeft{180.0f};
+    // FPS sliding window (0.5 s) — populated regardless of pause state so HUD
+    // reflects actual frame cost during overlays as well.
+    float m_fpsAccumDt{0.0f};
+    int m_fpsAccumFrames{0};
+    int m_displayedFps{0};
+    bool m_showSystemTimings{false};
+    float m_lastAiMs{0.0f};
+    float m_lastRangedMs{0.0f};
+    float m_lastProjectilesMs{0.0f};
+    float m_lastProjCollisionsMs{0.0f};
+    float m_lastAutoAttackMs{0.0f};
+    float m_lastLifetimesMs{0.0f};
+    float m_lastPickupsMs{0.0f};
+    int m_stressWavesSpawned{0};
     std::array<bool, WaveCount> m_wavesSpawned{};
     PersistentState& m_persistentState;
     AssetManager m_assetManager;

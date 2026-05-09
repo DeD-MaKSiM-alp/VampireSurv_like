@@ -21,6 +21,7 @@ public:
     bool isAlive(EntityId entity) const;
     void destroyEntityDeferred(EntityId entity);
     void flushDestroyed();
+    std::size_t aliveCount() const { return m_aliveEntities.size(); }
 
     template <typename Component, typename... Args>
     Component& addComponent(EntityId entity, Args&&... args)
