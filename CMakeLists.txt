@@ -29,12 +29,43 @@ add_executable(VampireSurvLike
     src/app/Application.cpp
     src/assets/AssetManager.cpp
     src/ecs/World.cpp
+    src/game/Balance.cpp
     src/game/DefeatPassives.cpp
     src/game/Perks.cpp
     src/game/PersistentState.cpp
     src/screens/BaseScreen.cpp
     src/screens/RunScreen.cpp
 )
+
+# Smoke test executable. Covers the SFML-free modules: ECS, PersistentState
+# + save/load, Perks, DefeatPassives, Balance. RunScreen / BaseScreen are
+# excluded because they pull in SFML and a font dependency.
+add_executable(VampireSurvLikeTests
+    tests/test_main.cpp
+    tests/test_world.cpp
+    tests/test_persistent_state.cpp
+    tests/test_save_system.cpp
+    tests/test_perks.cpp
+    tests/test_defeat_passives.cpp
+    tests/test_balance.cpp
+    src/ecs/World.cpp
+    src/game/Balance.cpp
+    src/game/DefeatPassives.cpp
+    src/game/Perks.cpp
+    src/game/PersistentState.cpp
+)
+
+target_include_directories(VampireSurvLikeTests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+if(MSVC)
+    target_compile_options(VampireSurvLikeTests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(VampireSurvLikeTests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 target_include_directories(VampireSurvLike
     PRIVATE

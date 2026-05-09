@@ -113,6 +113,7 @@ private:
     int m_displayedFps{0};
     bool m_showSystemTimings{false};
     float m_lastAiMs{0.0f};
+    float m_lastContactMs{0.0f};
     float m_lastRangedMs{0.0f};
     float m_lastProjectilesMs{0.0f};
     float m_lastProjCollisionsMs{0.0f};

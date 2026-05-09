@@ -1,6 +1,7 @@
 #include "screens/RunScreen.h"
 
 #include "ecs/Components.h"
+#include "game/Balance.h"
 #include "game/DefeatPassives.h"
 
 #include <SFML/Graphics/Color.hpp>
@@ -387,7 +388,7 @@ void RunScreen::update(float deltaTime)
         };
 
         m_lastAiMs              = measure([&]{ updateEnemyAI(deltaTime); });
-                                  applyContactDamage(deltaTime);
+        m_lastContactMs         = measure([&]{ applyContactDamage(deltaTime); });
         m_lastRangedMs          = measure([&]{ updateRangedAttacks(deltaTime); });
         m_lastProjectilesMs     = measure([&]{ updateProjectiles(deltaTime); });
         m_lastProjCollisionsMs  = measure([&]{ handleProjectileCollisions(); });
@@ -864,6 +865,16 @@ void RunScreen::applyContactDamage(float deltaTime)
         {
             contactDamage.cooldownLeft = std::max(0.0f, contactDamage.cooldownLeft - deltaTime);
 
+            // Bug fix: skip enemies that died earlier in the same frame
+            // (HP already at 0, awaiting deferred destroy in flushDestroyed).
+            if (const auto* eh = m_world.getComponent<HealthComponent>(enemyEntity))
+            {
+                if (eh->currentHp <= 0.0f)
+                {
+                    return;
+                }
+            }
+
             auto* enemySprite = m_world.getComponent<SpriteComponent>(enemyEntity);
             const float enemyHalfW = enemySprite ? (enemySprite->width * 0.5f) : 0.0f;
             const float enemyHalfH = enemySprite ? (enemySprite->height * 0.5f) : 0.0f;
@@ -1233,11 +1244,21 @@ void RunScreen::updatePickups(float /*deltaTime*/)
 
     int gainedXp = 0;
     int gainedResource = 0;
-    m_world.forEach<PickupComponent, TransformComponent, ColliderComponent>(
-        [&](EntityId pickupEntity, PickupComponent& pickup, TransformComponent& transform, ColliderComponent& collider)
+    m_world.forEach<PickupComponent, TransformComponent, ColliderComponent, SpriteComponent>(
+        [&](EntityId pickupEntity,
+            PickupComponent& pickup,
+            TransformComponent& transform,
+            ColliderComponent& collider,
+            SpriteComponent& sprite)
         {
-            const float dx = playerCenterX - transform.x;
-            const float dy = playerCenterY - transform.y;
+            // Bug fix: distance must be from player center to pickup CENTER,
+            // not its top-left corner. Old code made the pickup zone
+            // asymmetric (~half-sprite offset) relative to where the player
+            // visually approached from.
+            const float pickupCenterX = transform.x + sprite.width * 0.5f;
+            const float pickupCenterY = transform.y + sprite.height * 0.5f;
+            const float dx = playerCenterX - pickupCenterX;
+            const float dy = playerCenterY - pickupCenterY;
             const float pickupRadius = playerCollider->radius + collider.radius;
             if (dx * dx + dy * dy > pickupRadius * pickupRadius)
             {
@@ -1305,11 +1326,15 @@ void RunScreen::handleDeaths()
             const float centerX = transform.x + halfW;
             const float centerY = transform.y + halfH;
 
-            spawnXpPickup(centerX, centerY, xpReward);
+            // Bug fix: XP and resource pickups previously spawned in the
+            // exact same point and visually stacked. Offset them by a small
+            // amount so they are individually visible / pickable.
+            constexpr float DropOffset = 14.0f;
+            spawnXpPickup(centerX - DropOffset, centerY, xpReward);
             // Resource drop is gated by an explicit constexpr probability of 1.0f
             // for MVP determinism; tune ResourceDropChance below if randomization
             // is later required.
-            spawnResourcePickup(centerX, centerY, resourceReward);
+            spawnResourcePickup(centerX + DropOffset, centerY, resourceReward);
             m_world.destroyEntityDeferred(entity);
         });
 }
@@ -1339,7 +1364,7 @@ void RunScreen::handleLevelUpProgression()
 
 int RunScreen::computeXpToNext(int level) const
 {
-    return static_cast<int>(std::round(40.0 * std::pow(static_cast<double>(level), 1.25)));
+    return balance::xpToNextLevel(level);
 }
 
 void RunScreen::spawnXpPickup(float x, float y, int xpValue)
@@ -1658,6 +1683,7 @@ void RunScreen::updateHudText()
     {
         ss << '\n'
            << "Sys ms:  AI=" << m_lastAiMs
+           << "  CT=" << m_lastContactMs
            << "  RA=" << m_lastRangedMs
            << "  PR=" << m_lastProjectilesMs
            << "  PC=" << m_lastProjCollisionsMs
