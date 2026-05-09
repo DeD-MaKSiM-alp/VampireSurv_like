@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake --preset msvc)",
+      "Bash(cmake --build --preset msvc-debug)",
+      "Bash(cmake --build --preset msvc-debug --clean-first)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(cmake --preset mingw)",
+      "Bash(build/msvc/Debug/VampireSurvLikeTests.exe)"
+    ]
+  }
+}

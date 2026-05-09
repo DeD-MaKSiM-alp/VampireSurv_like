@@ -1,0 +1,9 @@
+version 1
+total 13
+lastRaw 13
+lastGranted 13
+lastOutcome Stopped
+runs 1
+hpDefeats 0
+arousalDefeats 0
+passives
