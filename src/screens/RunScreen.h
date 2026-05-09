@@ -63,6 +63,11 @@ private:
                               float damage,
                               ProjectileVisual visual,
                               float arousalDamage);
+    void spawnPlayerProjectile(float originX,
+                               float originY,
+                               float dirX,
+                               float dirY,
+                               float damage);
     void applyArousalDamage(float amount);
     void updateProjectiles(float deltaTime);
     void handleProjectileCollisions();

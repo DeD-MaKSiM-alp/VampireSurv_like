@@ -72,9 +72,18 @@ constexpr float BoltProjectileHeight = 24.0f;
 constexpr float BoltProjectileRadius = 11.0f;
 constexpr float BoltProjectileLifetime = 3.0f;
 
-constexpr float XpPickupWidth = 20.0f;
-constexpr float XpPickupHeight = 20.0f;
-constexpr float XpPickupColliderRadius = 12.0f;
+// Player auto-attack now spawns a real projectile instead of dealing
+// hitscan damage. Speed is high enough that misses are rare on stationary
+// or slow enemies (caster 90 px/s, ranged 110 px/s) within attack range.
+constexpr float PlayerProjectileWidth = 14.0f;
+constexpr float PlayerProjectileHeight = 14.0f;
+constexpr float PlayerProjectileRadius = 6.0f;
+constexpr float PlayerProjectileLifetime = 1.0f;
+constexpr float PlayerProjectileSpeed = 600.0f;
+
+constexpr float XpPickupWidth = 24.0f;
+constexpr float XpPickupHeight = 24.0f;
+constexpr float XpPickupColliderRadius = 14.0f;
 constexpr float XpPickupLifetime = 10.0f;
 
 constexpr float ResourcePickupWidth = 26.0f;
@@ -150,6 +159,7 @@ RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont, PersistentState& pe
     m_assetManager.loadTexture("enemy_caster", "assets/textures/placeholders/enemy_caster.png");
     m_assetManager.loadTexture("projectile_arrow", "assets/textures/placeholders/projectile_arrow.png");
     m_assetManager.loadTexture("projectile_bolt", "assets/textures/placeholders/projectile_bolt.png");
+    m_assetManager.loadTexture("projectile_player", "assets/textures/placeholders/projectile_player.png");
     m_assetManager.loadTexture("xp_pickup", "assets/textures/placeholders/xp_pickup.png");
     m_assetManager.loadTexture("resource_pickup", "assets/textures/placeholders/resource_pickup.png");
 
@@ -980,6 +990,40 @@ void RunScreen::spawnEnemyProjectile(float originX,
     m_world.addComponent<LifetimeComponent>(projectile, LifetimeComponent{lifetime});
 }
 
+void RunScreen::spawnPlayerProjectile(float originX,
+                                      float originY,
+                                      float dirX,
+                                      float dirY,
+                                      float damage)
+{
+    const EntityId projectile = m_world.createEntity();
+    m_world.addComponent<TransformComponent>(projectile, TransformComponent{
+        originX - PlayerProjectileWidth * 0.5f,
+        originY - PlayerProjectileHeight * 0.5f
+    });
+    m_world.addComponent<SpriteComponent>(projectile, SpriteComponent{
+        "projectile_player",
+        PlayerProjectileWidth,
+        PlayerProjectileHeight,
+        // Light cyan-white: contrasts with both enemy projectiles
+        // (yellow arrow, violet bolt) and pickups.
+        180,
+        240,
+        255,
+        255
+    });
+    m_world.addComponent<ColliderComponent>(projectile, ColliderComponent{PlayerProjectileRadius});
+    m_world.addComponent<ProjectileComponent>(projectile, ProjectileComponent{
+        ProjectileOwner::Player,
+        damage,
+        dirX * PlayerProjectileSpeed,
+        dirY * PlayerProjectileSpeed,
+        ProjectileVisual::Arrow,
+        0.0f
+    });
+    m_world.addComponent<LifetimeComponent>(projectile, LifetimeComponent{PlayerProjectileLifetime});
+}
+
 void RunScreen::updateProjectiles(float deltaTime)
 {
     m_world.forEach<ProjectileComponent, TransformComponent, SpriteComponent>(
@@ -1026,24 +1070,64 @@ void RunScreen::handleProjectileCollisions()
             ColliderComponent& collider,
             SpriteComponent& sprite)
         {
-            if (projectile.owner != ProjectileOwner::Enemy)
+            const float centerX = transform.x + sprite.width * 0.5f;
+            const float centerY = transform.y + sprite.height * 0.5f;
+
+            if (projectile.owner == ProjectileOwner::Enemy)
             {
+                const float dx = playerCenterX - centerX;
+                const float dy = playerCenterY - centerY;
+                const float minDistance = playerCollider->radius + collider.radius;
+
+                if (dx * dx + dy * dy <= minDistance * minDistance)
+                {
+                    const float dmg = projectile.damage * m_incomingHpMultiplier;
+                    playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - dmg);
+                    if (projectile.arousalDamage > 0.0f)
+                    {
+                        applyArousalDamage(projectile.arousalDamage);
+                    }
+                    m_world.destroyEntityDeferred(entity);
+                    m_hitFeedbackTimer = 0.18f;
+                }
                 return;
             }
 
-            const float centerX = transform.x + sprite.width * 0.5f;
-            const float centerY = transform.y + sprite.height * 0.5f;
-            const float dx = playerCenterX - centerX;
-            const float dy = playerCenterY - centerY;
-            const float minDistance = playerCollider->radius + collider.radius;
-
-            if (dx * dx + dy * dy <= minDistance * minDistance)
-            {
-                const float dmg = projectile.damage * m_incomingHpMultiplier;
-                playerHealth->currentHp = std::max(0.0f, playerHealth->currentHp - dmg);
-                if (projectile.arousalDamage > 0.0f)
+            // Player projectile vs nearest enemy hit. We stop at the first
+            // collision; nested forEach is safe because we destroy only the
+            // projectile (a different storage from EnemyComponent).
+            EntityId hitEnemy = InvalidEntity;
+            m_world.forEach<EnemyComponent, TransformComponent, ColliderComponent, SpriteComponent, HealthComponent>(
+                [&](EntityId enemyEntity,
+                    EnemyComponent&,
+                    TransformComponent& enemyTransform,
+                    ColliderComponent& enemyCollider,
+                    SpriteComponent& enemySprite,
+                    HealthComponent& enemyHealth)
                 {
-                    applyArousalDamage(projectile.arousalDamage);
+                    if (hitEnemy != InvalidEntity || enemyHealth.currentHp <= 0.0f)
+                    {
+                        return;
+                    }
+                    const float ex = enemyTransform.x + enemySprite.width * 0.5f;
+                    const float ey = enemyTransform.y + enemySprite.height * 0.5f;
+                    const float pdx = ex - centerX;
+                    const float pdy = ey - centerY;
+                    const float minD = collider.radius + enemyCollider.radius;
+                    if (pdx * pdx + pdy * pdy <= minD * minD)
+                    {
+                        hitEnemy = enemyEntity;
+                    }
+                });
+
+            if (hitEnemy != InvalidEntity)
+            {
+                applyDamageToEntity(hitEnemy, projectile.damage);
+                if (auto* es = m_world.getComponent<SpriteComponent>(hitEnemy))
+                {
+                    es->tintR = 255;
+                    es->tintG = 90;
+                    es->tintB = 90;
                 }
                 m_world.destroyEntityDeferred(entity);
                 m_hitFeedbackTimer = 0.18f;
@@ -1092,16 +1176,31 @@ void RunScreen::updateAutoAttack(float deltaTime)
         return;
     }
 
-    applyDamageToEntity(target, effectiveDamage);
-    autoAttack->cooldownLeft = effectiveInterval;
-    m_hitFeedbackTimer = 0.18f;
-
-    if (auto* targetSprite = m_world.getComponent<SpriteComponent>(target))
+    auto* targetTransform = m_world.getComponent<TransformComponent>(target);
+    auto* targetSprite = m_world.getComponent<SpriteComponent>(target);
+    auto* playerTransform = m_world.getComponent<TransformComponent>(m_playerEntity);
+    auto* playerSprite = m_world.getComponent<SpriteComponent>(m_playerEntity);
+    if (!targetTransform || !targetSprite || !playerTransform || !playerSprite)
     {
-        targetSprite->tintR = 255;
-        targetSprite->tintG = 90;
-        targetSprite->tintB = 90;
+        return;
     }
+
+    const float originX = playerTransform->x + playerSprite->width * 0.5f;
+    const float originY = playerTransform->y + playerSprite->height * 0.5f;
+    const float targetX = targetTransform->x + targetSprite->width * 0.5f;
+    const float targetY = targetTransform->y + targetSprite->height * 0.5f;
+    float dirX = targetX - originX;
+    float dirY = targetY - originY;
+    const float dist = std::sqrt(dirX * dirX + dirY * dirY);
+    if (dist < 0.001f)
+    {
+        return;
+    }
+    dirX /= dist;
+    dirY /= dist;
+
+    spawnPlayerProjectile(originX, originY, dirX, dirY, effectiveDamage);
+    autoAttack->cooldownLeft = effectiveInterval;
 }
 
 void RunScreen::updateLifetimes(float deltaTime)
@@ -1256,9 +1355,12 @@ void RunScreen::spawnXpPickup(float x, float y, int xpValue)
         "xp_pickup",
         XpPickupWidth,
         XpPickupHeight,
-        120,
-        230,
+        // Bright lime: contrasts with all enemy tints (red/green/violet)
+        // and the yellow resource pickup. Pickup contrast is the main
+        // readability fix for stage post-MVP polish.
+        160,
         255,
+        90,
         255
     });
     m_world.addComponent<ColliderComponent>(pickup, ColliderComponent{XpPickupColliderRadius});
