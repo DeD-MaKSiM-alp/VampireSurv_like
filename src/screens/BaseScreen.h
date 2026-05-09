@@ -27,5 +27,4 @@ private:
     sf::Text m_totalText;
     sf::Text m_statsText;
     sf::Text m_passivesText;
-    sf::Text m_hintText;
 };

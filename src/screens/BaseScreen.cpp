@@ -27,10 +27,10 @@ const char* outcomeLabel(LastRunOutcome outcome)
 std::string formatPassiveList(const PersistentState& state)
 {
     const auto& all = getAllDefeatPassives();
-    bool any = false;
     std::ostringstream out;
-    out << "Defeat passives: ";
+    out << "Defeat passives:";
 
+    bool any = false;
     for (const DefeatPassiveDefinition& def : all)
     {
         const int count = state.defeatPassiveCount(def.id);
@@ -38,12 +38,7 @@ std::string formatPassiveList(const PersistentState& state)
         {
             continue;
         }
-
-        if (any)
-        {
-            out << ", ";
-        }
-        out << def.name;
+        out << "\n  - " << def.name;
         if (count > 1)
         {
             out << " x" << count;
@@ -69,43 +64,39 @@ BaseScreen::BaseScreen(const sf::Font& uiFont, bool hasUiFont, const PersistentS
     }
 
     m_title.setFont(uiFont);
-    m_title.setString("Base Stub");
+    m_title.setString("Base");
     m_title.setCharacterSize(48);
     m_title.setFillColor(sf::Color(230, 230, 245));
-    m_title.setPosition(64.f, 64.f);
+    m_title.setPosition(64.f, 48.f);
 
     m_instruction.setFont(uiFont);
     m_instruction.setString("Press Enter to start a run");
-    m_instruction.setCharacterSize(28);
+    m_instruction.setCharacterSize(26);
     m_instruction.setFillColor(sf::Color(180, 210, 255));
-    m_instruction.setPosition(64.f, 140.f);
+    m_instruction.setPosition(64.f, 116.f);
 
+    // Stats block
+    m_statsText.setFont(uiFont);
+    m_statsText.setCharacterSize(22);
+    m_statsText.setFillColor(sf::Color(210, 220, 240));
+    m_statsText.setPosition(64.f, 188.f);
+
+    // Resources block
     m_totalText.setFont(uiFont);
-    m_totalText.setCharacterSize(24);
+    m_totalText.setCharacterSize(22);
     m_totalText.setFillColor(sf::Color(220, 240, 200));
-    m_totalText.setPosition(64.f, 220.f);
+    m_totalText.setPosition(64.f, 252.f);
 
     m_resultText.setFont(uiFont);
-    m_resultText.setCharacterSize(22);
+    m_resultText.setCharacterSize(20);
     m_resultText.setFillColor(sf::Color(220, 220, 245));
-    m_resultText.setPosition(64.f, 260.f);
+    m_resultText.setPosition(64.f, 286.f);
 
-    m_statsText.setFont(uiFont);
-    m_statsText.setCharacterSize(20);
-    m_statsText.setFillColor(sf::Color(210, 220, 240));
-    m_statsText.setPosition(64.f, 295.f);
-
+    // Defeat passives block
     m_passivesText.setFont(uiFont);
     m_passivesText.setCharacterSize(20);
     m_passivesText.setFillColor(sf::Color(255, 200, 200));
-    m_passivesText.setPosition(64.f, 325.f);
-
-    m_hintText.setFont(uiFont);
-    m_hintText.setCharacterSize(16);
-    m_hintText.setFillColor(sf::Color(150, 160, 180));
-    m_hintText.setString("Result is granted on return from run (Stop / Defeat). "
-                         "Base only reads PersistentState.");
-    m_hintText.setPosition(64.f, 365.f);
+    m_passivesText.setPosition(64.f, 350.f);
 
     refreshResultText();
 }
@@ -133,11 +124,10 @@ void BaseScreen::render(sf::RenderWindow& window)
     {
         window.draw(m_title);
         window.draw(m_instruction);
+        window.draw(m_statsText);
         window.draw(m_totalText);
         window.draw(m_resultText);
-        window.draw(m_statsText);
         window.draw(m_passivesText);
-        window.draw(m_hintText);
     }
 }
 

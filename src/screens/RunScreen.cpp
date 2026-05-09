@@ -196,6 +196,21 @@ RunScreen::RunScreen(const sf::Font& uiFont, bool hasUiFont, PersistentState& pe
         m_stopChoicesText.setCharacterSize(26);
         m_stopChoicesText.setFillColor(sf::Color(230, 230, 255));
         m_stopChoicesText.setPosition(380.f, 290.f);
+
+        m_resultTitleText.setFont(uiFont);
+        m_resultTitleText.setCharacterSize(40);
+        m_resultTitleText.setFillColor(sf::Color(255, 245, 220));
+        m_resultTitleText.setPosition(360.f, 180.f);
+
+        m_resultBodyText.setFont(uiFont);
+        m_resultBodyText.setCharacterSize(22);
+        m_resultBodyText.setFillColor(sf::Color(220, 230, 250));
+        m_resultBodyText.setPosition(360.f, 250.f);
+
+        m_resultHintText.setFont(uiFont);
+        m_resultHintText.setCharacterSize(20);
+        m_resultHintText.setFillColor(sf::Color(255, 220, 180));
+        m_resultHintText.setPosition(360.f, 440.f);
     }
 
     updateHudText();
@@ -208,6 +223,18 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
         return std::nullopt;
     }
 
+    // Stage 15: result overlay sits between in-run states (defeat / stop /
+    // active Esc) and the actual return to Base. Once shown, only Enter
+    // exits to Base — every other key is intentionally swallowed.
+    if (m_isShowingResult)
+    {
+        if (event.key.code == sf::Keyboard::Enter)
+        {
+            return GameState::Base;
+        }
+        return std::nullopt;
+    }
+
     if (m_isDefeated)
     {
         if (event.key.code == sf::Keyboard::Enter)
@@ -217,7 +244,8 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
                     ? LastRunOutcome::DefeatArousal
                     : LastRunOutcome::DefeatHp;
             commitRunResultIfNeeded(defeatOutcome);
-            return GameState::Base;
+            m_isShowingResult = true;
+            return std::nullopt;
         }
         return std::nullopt;
     }
@@ -229,7 +257,8 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
             || event.key.code == sf::Keyboard::Escape)
         {
             commitRunResultIfNeeded(LastRunOutcome::Stopped);
-            return GameState::Base;
+            m_isShowingResult = true;
+            return std::nullopt;
         }
 
         if (event.key.code == sf::Keyboard::Num1
@@ -288,7 +317,8 @@ std::optional<GameState> RunScreen::handleEvent(const sf::Event& event)
         // exercise the Base UI without dragging through the full 3-minute
         // timer. Any change here must be reflected in the GDD.
         commitRunResultIfNeeded(LastRunOutcome::Stopped);
-        return GameState::Base;
+        m_isShowingResult = true;
+        return std::nullopt;
     }
 
     return std::nullopt;
@@ -299,7 +329,7 @@ void RunScreen::update(float deltaTime)
     m_hitFeedbackTimer = std::max(0.0f, m_hitFeedbackTimer - deltaTime);
 
     const bool simulationActive =
-        !m_isDefeated && !m_isLevelUpSelection && !m_isStopped;
+        !m_isDefeated && !m_isLevelUpSelection && !m_isStopped && !m_isShowingResult;
 
     if (simulationActive)
     {
@@ -367,14 +397,19 @@ void RunScreen::render(sf::RenderWindow& window)
             window.draw(m_feedbackText);
         }
 
-        if (m_isLevelUpSelection && !m_isStopped && !m_isDefeated)
+        if (m_isLevelUpSelection && !m_isStopped && !m_isDefeated && !m_isShowingResult)
         {
             renderLevelUpOverlay(window);
         }
 
-        if (m_isStopped && !m_isDefeated)
+        if (m_isStopped && !m_isDefeated && !m_isShowingResult)
         {
             renderStopOverlay(window);
+        }
+
+        if (m_isShowingResult)
+        {
+            renderResultOverlay(window);
         }
     }
 }
@@ -1492,4 +1527,62 @@ void RunScreen::renderStopOverlay(sf::RenderWindow& window)
             << "2) Exit to Base";
     m_stopChoicesText.setString(choices.str());
     window.draw(m_stopChoicesText);
+}
+
+void RunScreen::renderResultOverlay(sf::RenderWindow& window)
+{
+    sf::RectangleShape overlay(sf::Vector2f(WindowWidth, WindowHeight));
+    overlay.setFillColor(sf::Color(0, 0, 0, 210));
+    window.draw(overlay);
+
+    m_resultTitleText.setString("Run Result");
+    window.draw(m_resultTitleText);
+
+    const LastRunOutcome outcome = m_persistentState.lastRunOutcome();
+    const int raw = m_persistentState.lastRunResourceRaw();
+    const int granted = m_persistentState.lastRunResourceGranted();
+
+    const char* outcomeName = "None";
+    bool isDefeat = false;
+    switch (outcome)
+    {
+        case LastRunOutcome::None:          outcomeName = "None";          break;
+        case LastRunOutcome::Stopped:       outcomeName = "Stopped";       break;
+        case LastRunOutcome::DefeatHp:      outcomeName = "DefeatHp";      isDefeat = true; break;
+        case LastRunOutcome::DefeatArousal: outcomeName = "DefeatArousal"; isDefeat = true; break;
+    }
+
+    std::ostringstream body;
+    body << "Outcome: " << outcomeName << '\n'
+         << "Resource raw: " << raw << '\n'
+         << "Resource granted: " << granted;
+    if (isDefeat)
+    {
+        body << " (defeat penalty: floor(raw * 0.3))";
+    }
+    else
+    {
+        body << " (full grant: 100% of raw)";
+    }
+    body << '\n';
+
+    if (isDefeat)
+    {
+        const auto& passives = m_persistentState.defeatPassives();
+        if (!passives.empty())
+        {
+            const DefeatPassiveDefinition& def = findDefeatPassiveDefinition(passives.back());
+            body << "Defeat passive granted: " << def.name;
+        }
+        else
+        {
+            body << "Defeat passive granted: (none)";
+        }
+    }
+
+    m_resultBodyText.setString(body.str());
+    window.draw(m_resultBodyText);
+
+    m_resultHintText.setString("Press Enter to continue");
+    window.draw(m_resultHintText);
 }

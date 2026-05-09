@@ -81,6 +81,7 @@ private:
     void renderEntities(sf::RenderWindow& window);
     void renderLevelUpOverlay(sf::RenderWindow& window);
     void renderStopOverlay(sf::RenderWindow& window);
+    void renderResultOverlay(sf::RenderWindow& window);
 
     static constexpr std::size_t WaveCount = 3;
 
@@ -89,6 +90,7 @@ private:
     DefeatReason m_defeatReason{DefeatReason::None};
     bool m_isLevelUpSelection{false};
     bool m_isStopped{false};
+    bool m_isShowingResult{false};
     bool m_resultApplied{false};
     int m_pendingLevelUps{0};
     int m_runResourceRaw{0};
@@ -120,4 +122,7 @@ private:
     sf::Text m_lastPerkText;
     sf::Text m_stopTitleText;
     sf::Text m_stopChoicesText;
+    sf::Text m_resultTitleText;
+    sf::Text m_resultBodyText;
+    sf::Text m_resultHintText;
 };
